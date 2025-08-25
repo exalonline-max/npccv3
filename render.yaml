@@ -13,6 +13,7 @@ services:
 
   - type: static
     name: npcchatter-frontend
+  env: node
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
