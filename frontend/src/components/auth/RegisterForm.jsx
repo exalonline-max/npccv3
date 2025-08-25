@@ -23,24 +23,24 @@ export default function RegisterForm() {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium">Username</label>
-        <input value={username} onChange={e=>setUsername(e.target.value)} className="w-full border rounded px-2 py-1" required />
+      <div className="form-control">
+        <label className="label"><span className="label-text">Username</span></label>
+        <input value={username} onChange={e=>setUsername(e.target.value)} className="input input-bordered w-full" required />
       </div>
-      <div>
-        <label className="block text-sm font-medium">Email</label>
-        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full border rounded px-2 py-1" required />
+      <div className="form-control">
+        <label className="label"><span className="label-text">Email</span></label>
+        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="input input-bordered w-full" required />
       </div>
-      <div>
-        <label className="block text-sm font-medium">Password</label>
-        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full border rounded px-2 py-1" required />
+      <div className="form-control">
+        <label className="label"><span className="label-text">Password</span></label>
+        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="input input-bordered w-full" required />
       </div>
-      <div>
-        <label className="block text-sm font-medium">Confirm Password</label>
-        <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} className="w-full border rounded px-2 py-1" required />
+      <div className="form-control">
+        <label className="label"><span className="label-text">Confirm Password</span></label>
+        <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} className="input input-bordered w-full" required />
       </div>
-      <div>
-        <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">Register</button>
+      <div className="form-control mt-4">
+        <button type="submit" className="btn btn-success">Register</button>
       </div>
     </form>
   )

@@ -5,15 +5,17 @@ import RegisterForm from '../components/auth/RegisterForm'
 export default function AuthPage() {
   const [mode, setMode] = useState('login')
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md bg-white p-8 rounded shadow">
-        <h1 className="text-2xl font-bold mb-4">NPC Chatter v3</h1>
-        <div className="mb-4">
-          <button onClick={()=>setMode('login')} className={`mr-2 px-4 py-2 rounded ${mode==='login'? 'bg-blue-600 text-white':'bg-gray-200'}`}>Login</button>
-          <button onClick={()=>setMode('register')} className={`${mode==='register'? 'bg-green-600 text-white':'bg-gray-200'} px-4 py-2 rounded`}>Register</button>
-        </div>
-        <div>
-          {mode === 'login' ? <LoginForm /> : <RegisterForm />}
+    <div className="min-h-screen flex items-center justify-center bg-base-200">
+      <div className="card w-full max-w-md shadow-xl">
+        <div className="card-body">
+          <h1 className="card-title">NPC Chatter v3</h1>
+          <div className="btn-group">
+            <button onClick={()=>setMode('login')} className={`btn ${mode==='login'? 'btn-active btn-primary':'btn-ghost'}`}>Login</button>
+            <button onClick={()=>setMode('register')} className={`${mode==='register'? 'btn-active btn-success':'btn-ghost'} btn`}>Register</button>
+          </div>
+          <div className="mt-4">
+            {mode === 'login' ? <LoginForm /> : <RegisterForm />}
+          </div>
         </div>
       </div>
     </div>

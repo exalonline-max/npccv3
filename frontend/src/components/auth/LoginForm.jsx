@@ -20,16 +20,16 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium">Email</label>
-        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full border rounded px-2 py-1" required />
+      <div className="form-control">
+        <label className="label"><span className="label-text">Email</span></label>
+        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="input input-bordered w-full" required />
       </div>
-      <div>
-        <label className="block text-sm font-medium">Password</label>
-        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full border rounded px-2 py-1" required />
+      <div className="form-control">
+        <label className="label"><span className="label-text">Password</span></label>
+        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="input input-bordered w-full" required />
       </div>
-      <div>
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Login</button>
+      <div className="form-control mt-4">
+        <button type="submit" className="btn btn-primary">Login</button>
       </div>
     </form>
   )
