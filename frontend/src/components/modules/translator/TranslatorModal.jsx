@@ -9,38 +9,88 @@ const LANGUAGES = [
   'Giant',
 ]
 
+function randomGlyph(len){
+  const glyphs = "ρ σ ϟ Ѧ Ҩ ϻ Ϫ ɸ ɣ ʒ Ᵽ Ɐ ɴ ȶ".split(' ')
+  let out = ''
+  for (let i=0;i<len;i++) out += glyphs[Math.floor(Math.random()*glyphs.length)]
+  return out
+}
+
 function mockTranslate(text, lang){
-  // Very naive, distinctive transformations per language for mock purposes
   if (!text) return ''
+  const words = text.split(/\s+/)
   switch(lang){
     case 'Elvish':
-      // vowel elongation
-      return text.replace(/[aeiou]/gi, (v)=>v+v)
+      // flowing diacritics and doubled vowels
+      return words.map(w => w.split('').map((c,i)=> (/[aeiou]/i.test(c) ? c + '́' : c)).join('')).join(' ')
     case 'Dwarvish':
-      // consonant doubling
-      return text.replace(/([bcdfghjklmnpqrstvwxyz])/gi, (c)=>c+c)
+      // blocky runes (use doubled consonants and heavy glyphs)
+      return words.map(w => w.replace(/([bcdfghjklmnpqrstvwxyz])/gi, (c)=>c+c)).join(' ')
     case 'Draconic':
-      // reverse words and add apostrophes
-      return text.split(' ').map(w=>w.split('').reverse().join('') + "'").join(' ')
+      // dragon-scratch glyphs: random glyphs with apostrophes
+      return words.map(w => randomGlyph(Math.max(3, Math.min(8, Math.floor(w.length/1.2)))) + "'").join(' ')
     case 'Infernal':
-      return text.split('').map((c,i)=> i%2? c.toUpperCase(): c.toLowerCase()).join('')
+      // jagged: mix punctuation with letters
+      return words.map(w => w.split('').map(c => (Math.random()>0.6? '~':'') + c).join('')).join(' ')
     case 'Celestial':
-      return text.split(' ').map(w=>w + 'th').join(' ')
+      // soft, starry script: add circles and small diacritics
+      return words.map(w => '◌' + w.split('').join('◦')).join(' ')
     case 'Giant':
-      return text.toUpperCase()
+      // loud and all-caps with extra exclamation glyphs
+      return words.map(w => w.toUpperCase() + '‼').join(' ')
     default:
       return text
   }
 }
 
-function mockPronunciation(text){
-  // Simplified phonetic: replace vowels by common phonetic markers
-  return text
-    .replace(/th/gi, 'θ')
-    .replace(/ch/gi, 'tʃ')
-    .replace(/sh/gi, 'ʃ')
-    .replace(/qu/gi, 'kw')
-    .replace(/[aeiou]/gi, (v)=> v.toLowerCase())
+function mockPronunciation(translated, lang){
+  // Generate a pronunciation that reflects how the translated (fantasy) text would sound.
+  if (!translated) return ''
+  const pools = {
+    Elvish: ['ae','li','ra','el','ion','eth','ia','ar'],
+    Dwarvish: ['dor','gim','ruk','bar','un','th','gor'],
+    Draconic: ['su','ji','na','ack','gar','rax','zor','th'],
+    Infernal: ['kh','zha','urr','ix','ash','zek'],
+    Celestial: ['li','ea','so','el','ae','ion'],
+    Giant: ['GRA','MOR','THA','KOR']
+  }
+
+  const pool = pools[lang] || ['la','na','ra']
+
+  // Tokenize translated text by words or glyph groups
+  const tokens = String(translated).split(/\s+/).filter(Boolean)
+
+  const pronounceToken = (t) => {
+    // If token contains ASCII letters, break into pseudo-syllables based on length
+    const hasAscii = /[a-zA-Z]/.test(t)
+    if (hasAscii) {
+      const clean = t.replace(/[^a-zA-Z']/g,'')
+      const parts = []
+      let i = 0
+      while (i < clean.length) {
+        const chunk = clean.slice(i, i+Math.max(1, Math.floor(Math.random()*2)+1))
+        parts.push(chunk.toLowerCase())
+        i += chunk.length
+      }
+      // map parts to pronounceable syllables
+      return parts.map((p, idx) => {
+        const pick = pool[(p.charCodeAt(0) + idx) % pool.length]
+        return (p.replace(/[^aeiouy]/gi, '') ? p.replace(/([aeiouy])/gi,'$1-') : p) + pick
+      }).join('-')
+    }
+
+    // For glyphs/symbols, map each glyph to a syllable from pool deterministically
+    let seed = 0
+    for (let i=0;i<t.length;i++) seed += t.charCodeAt(i)
+    const parts = []
+    const syllCount = Math.max(1, Math.min(4, Math.floor(t.length/2)))
+    for (let s=0;s<syllCount;s++) {
+      parts.push(pool[(seed + s) % pool.length])
+    }
+    return parts.join('-')
+  }
+
+  return tokens.map(pronounceToken).join(' ')
 }
 
 export default function TranslatorModal({open, onClose}){
@@ -50,7 +100,7 @@ export default function TranslatorModal({open, onClose}){
   if (!open) return null
 
   const translated = mockTranslate(text, selected)
-  const pron = mockPronunciation(translated)
+  const pron = mockPronunciation(translated, selected)
 
   function send(){
     if (!text.trim()) return
