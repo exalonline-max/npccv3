@@ -19,6 +19,9 @@ services:
     staticPublishPath: dist
     pullRequestPreviewsEnabled: true
     autoDeploy: true
+    domains:
+      - www.npcchatter.com
+      - npcchatter.com
     envVars:
       - key: VITE_API_BASE
         fromService:
