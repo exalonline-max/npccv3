@@ -7,6 +7,8 @@ if (_base && !/^https?:\/\//i.test(_base)) {
 }
 const API_BASE = (_base.replace(/\/$/, '') || '') + '/api'
 
+export { API_BASE }
+
 type ReqOptions = {
   method?: string
   body?: any
