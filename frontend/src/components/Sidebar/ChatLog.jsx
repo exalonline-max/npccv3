@@ -26,6 +26,7 @@ function parseJwt(token) {
 export default function ChatLog(){
   const [msgs, setMsgs] = useState(initial)
   const [text, setText] = useState('')
+  const listRef = React.useRef(null)
 
   useEffect(()=>{
     function handler(e){
@@ -39,6 +40,12 @@ export default function ChatLog(){
     return ()=> window.removeEventListener('npcchatter:message', handler)
   }, [])
 
+  // auto-scroll on new messages
+  useEffect(()=>{
+    const el = listRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [msgs])
+
   function send(){
     if (!text.trim()) return
     setMsgs(prev => [...prev, {id: Date.now(), author:'You', type:'msg', text}])
@@ -50,9 +57,10 @@ export default function ChatLog(){
   const speaks = payload?.speaks || [] // array of language strings the user understands
 
   return (
-    <div className="card bg-base-200 p-3">
+    <div className="card bg-base-200 p-3 flex flex-col h-full">
       <div className="font-semibold mb-2">Chat</div>
-      <div className="space-y-2 max-h-40 overflow-auto">
+
+      <div ref={listRef} className="flex-1 space-y-2 overflow-auto">
         {msgs.map(m => (
           <div key={m.id} className={m.type === 'alert' ? 'text-sm text-warning' : 'text-sm'}>
             <span className="font-medium">{m.author}:</span>
