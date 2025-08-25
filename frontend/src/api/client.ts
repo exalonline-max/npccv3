@@ -5,6 +5,12 @@ let _base = import.meta.env.VITE_API_BASE || ''
 if (_base && !/^https?:\/\//i.test(_base)) {
   _base = 'https://' + _base
 }
+// If Render injects a short service name (e.g. "npcchatter-backend") the
+// browser can't resolve that. Append the default Render domain so the URL
+// becomes "https://npcchatter-backend.onrender.com" which is resolvable.
+if (_base && /^https:\/\/[^.\/]+$/.test(_base)) {
+  _base = _base + '.onrender.com'
+}
 const API_BASE = (_base.replace(/\/$/, '') || '') + '/api'
 
 export { API_BASE }
