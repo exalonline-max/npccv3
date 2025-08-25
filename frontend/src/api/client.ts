@@ -1,4 +1,11 @@
-const API_BASE = (import.meta.env.VITE_API_BASE || '') + '/api'
+// Normalize VITE_API_BASE: Render's Blueprint `fromService.property: host` returns
+// a hostname without scheme (e.g. "npcchatter-backend.onrender.com").
+// Ensure we have a full https:// URL so fetch works correctly.
+let _base = import.meta.env.VITE_API_BASE || ''
+if (_base && !/^https?:\/\//i.test(_base)) {
+  _base = 'https://' + _base
+}
+const API_BASE = (_base.replace(/\/$/, '') || '') + '/api'
 
 type ReqOptions = {
   method?: string
