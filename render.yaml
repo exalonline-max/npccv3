@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app -b 0.0.0.0:$PORT
+    envVars:
+      - key: PORT
+        value: "5001"
+  - type: static
+    name: frontend
+    env: node
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: "https://$(backend).onrender.com"
