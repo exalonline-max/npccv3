@@ -1,19 +1,26 @@
 services:
   - type: web
-    name: backend
+    name: npcchatter-backend
     env: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app -b 0.0.0.0:$PORT
+    plan: free
+    autoDeploy: true
     envVars:
-      - key: PORT
-        value: "5001"
+      - key: APP_ENV
+        value: production
+
   - type: static
-    name: frontend
-    env: node
+    name: npcchatter-frontend
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    autoDeploy: true
     envVars:
       - key: VITE_API_BASE
-        value: "https://$(backend).onrender.com"
+        fromService:
+          type: web
+          name: npcchatter-backend
+          property: url
