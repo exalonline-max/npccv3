@@ -22,7 +22,23 @@ export default function AuthPage() {
                   localStorage.setItem('token', token)
                   window.location.href = '/dashboard'
                 } catch (err) {
-                  alert(err.response?.data?.message || err.message)
+                  // Network error (no backend) fallback: create a mock token so frontend works offline
+                  const isNetwork = !err.response
+                  if (isNetwork) {
+                    const payload = {
+                      email: 'dev@npcchatter.com',
+                      username: 'DevUser',
+                      speaks: ['Common','Elvish'],
+                      role: 'dev',
+                      'active-campaign': 'Dev Campaign'
+                    }
+                    function b64(obj){ return btoa(JSON.stringify(obj)).replace(/=/g,'') }
+                    const fakeToken = `${b64({alg:'none'})}.${b64(payload)}.signature`
+                    localStorage.setItem('token', fakeToken)
+                    window.location.href = '/dashboard'
+                  } else {
+                    alert(err.response?.data?.message || err.message)
+                  }
                 }
               }} className="btn btn-warning">Dev</button>
           </div>
