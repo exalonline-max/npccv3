@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react'
 
 export default function LeftBubbles({initial=[]}){
   const defaults = [
-    {id:'translator', title:'Translator', icon:'🌐', active:false},
-    {id:'guardian', title:'Guardian Mode', icon:'🛡️', active:false},
-    {id:'infiltrator', title:'Infiltrator Mode', icon:'🗡️', active:false}
+  {id:'translator', title:'Translator', icon:'🌐', active:false},
+  {id:'charactersheet', title:'Character', icon:'🧭', active:false},
+  {id:'guardian', title:'Guardian Mode', icon:'🛡️', active:false},
+  {id:'infiltrator', title:'Infiltrator Mode', icon:'🗡️', active:false}
   ];
   const [bubbles, setBubbles] = useState(initial.length? initial : defaults);
 
