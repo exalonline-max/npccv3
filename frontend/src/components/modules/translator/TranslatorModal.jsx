@@ -164,6 +164,15 @@ export default function TranslatorModal({open, onClose}){
   const [selected, setSelected] = useState(LANGUAGES[0])
   const [text, setText] = useState('')
 
+  React.useEffect(()=>{
+    if (!open) return
+    function onKey(e){
+      if (e.key === 'Escape') onClose && onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return ()=> window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
   if (!open) return null
 
   const translated = mockTranslate(text, selected)

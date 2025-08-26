@@ -4,12 +4,18 @@ services:
     env: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app -b 0.0.0.0:$PORT
+    # use eventlet worker so Flask-SocketIO can handle WebSocket connections
+    startCommand: gunicorn -k eventlet -w 1 app:app -b 0.0.0.0:$PORT
     plan: free
     autoDeploy: true
     envVars:
       - key: APP_ENV
         value: production
+      - key: ALLOWED_ORIGINS
+        fromService:
+          type: web
+          name: npcchatter-frontend
+          property: host
 
   - type: web
     runtime: static
