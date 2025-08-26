@@ -42,7 +42,9 @@ export default function ChatLog(){
       const d = e.detail
       if (!d) return
       const id = Date.now()
-      const text = `${d.author || 'You'} rolled ${d.d20} ${d.modifier>=0? '+'+d.modifier : d.modifier} = ${d.total} (${d.label})`
+      // compact format: USER rolled X+Z=Y (label)
+      const modPart = d.modifier >= 0 ? `+${d.modifier}` : `${d.modifier}`
+      const text = `${d.author || 'You'} rolled ${d.d20}${modPart}=${d.total} (${d.label})`
       setMsgs(prev => [...prev, {id, author: d.author || 'You', type: 'roll', text}])
     }
     window.addEventListener('npcchatter:roll', onRoll)
@@ -104,20 +106,37 @@ export default function ChatLog(){
 
   <div ref={listRef} className="flex-1 space-y-2 overflow-auto min-h-0" style={{paddingBottom: bottomPad}}>
         {msgs.map(m => (
-          <div key={m.id} className={m.type === 'alert' ? 'text-sm text-warning' : 'text-sm'}>
-            <span className="font-medium">{m.author}:</span>
-            {' '}
-            {m.translated ? (
-              // show fantasy language to everyone; show original english if user speaks the language
-              <>
-                <span className="italic">{m.translated}</span>
-                {speaks.includes(m.lang) && (
-                  <div className="text-xs text-muted">({m.original})</div>
-                )}
-              </>
-            ) : (
-              m.text
-            )}
+          <div key={m.id} className="text-sm">
+            <div className={
+              m.type === 'alert'
+                ? 'w-full bg-yellow-50 border border-yellow-200 text-warning px-2 py-1 rounded-md'
+                : 'w-full bg-base-300/10 px-2 py-1 rounded-md'
+            }>
+              {m.translated ? (
+                <div className="flex flex-col">
+                  <div className="font-medium">{m.author}:</div>
+                  <div className="italic whitespace-pre-wrap break-words">{m.translated}</div>
+                  {speaks.includes(m.lang) && (
+                    <div className="text-xs text-muted">({m.original})</div>
+                  )}
+                </div>
+              ) : m.type === 'roll' ? (
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 flex-none" role="img" aria-label="D20">
+                    {/* High-contrast stylized die: warm fill and bold white "20" for dark backgrounds */}
+                    <rect x="6" y="6" width="52" height="52" rx="8" fill="#f59e0b" stroke="#111827" strokeWidth="1.6" />
+                    <path d="M32 12 L44 20 L52 32 L44 44 L32 52 L20 44 L12 32 L20 20 Z" fill="none" stroke="#92400e" strokeWidth="1" />
+                    <text x="32" y="38" textAnchor="middle" fontSize="12" fontWeight="800" fill="#ffffff">20</text>
+                  </svg>
+                  <div className="truncate text-xs">{m.text}</div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="font-medium">{m.author}:</div>
+                  <div className="break-words">{m.text}</div>
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>
