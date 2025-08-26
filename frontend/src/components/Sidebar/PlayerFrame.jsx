@@ -38,12 +38,39 @@ function pickName(seed) {
 export default function PlayerFrame(){
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
   const payload = token ? parseJwt(token) : null
+  const [sheet, setSheet] = React.useState(null)
   const seed = payload?.email || payload?.sub || String(Date.now())
-  const name = payload?.username || pickName(seed)
-  const avatar = `https://api.dicebear.com/6.x/avataaars/svg?seed=${encodeURIComponent(seed)}`
+  const avatar = sheet?.portrait || `https://api.dicebear.com/6.x/avataaars/svg?seed=${encodeURIComponent(seed)}`
 
-  // Mocked stats
-  const maxHp = 40
+  React.useEffect(()=>{
+    async function load(){
+      try{
+        const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+        if (!active) return
+        const clientMod = await import('../../api/client')
+        const client = clientMod.default
+        // find campaign id
+        const camps = await client.get('/campaigns')
+        const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
+        if (found){
+          // fetch my character for campaign
+          const chars = await client.get(`/campaigns/${found.id}/characters`)
+          // find char for current user (token sub)
+          const myChar = Array.isArray(chars) ? chars.find(ch=> String(ch.user_id) === String(payload?.sub)) : null
+          if (myChar) setSheet(myChar)
+        }
+      }catch(e){
+        // ignore load errors
+      }
+    }
+    load()
+    function onUpdate(){ load() }
+    window.addEventListener('npcchatter:character-updated', onUpdate)
+    return ()=> window.removeEventListener('npcchatter:character-updated', onUpdate)
+  }, [])
+
+  const name = sheet?.name || payload?.username || pickName(seed)
+  const maxHp = sheet?.maxHp || 40
   const hp = Math.floor(Math.random() * (maxHp - 10)) + 10
   const status = Math.random() > 0.85 ? 'Poisoned' : 'Healthy'
   const spellslots = {1:3,2:2,3:1}

@@ -243,6 +243,53 @@ def create_campaign():
     return jsonify(camp), 201
 
 
+@app.route('/api/campaigns/test/join', methods=['POST'])
+def join_or_create_test_campaign():
+    """Create a shared 'Test Campaign' if missing and add the current user as a member.
+    This endpoint is helpful for quick onboarding in production without manual admin steps.
+    """
+    global NEXT_CAMPAIGN_ID
+    user = get_user_from_auth()
+    if not user:
+        return jsonify({"message": "unauthorized"}), 401
+
+    # Find an existing test campaign by canonical name
+    test_name = 'Test Campaign'
+    camp = next((c for c in CAMPAIGNS if c.get('name') == test_name), None)
+    if not camp:
+        # create a predictable invite code for the test campaign
+        camp = { 'id': NEXT_CAMPAIGN_ID, 'name': test_name, 'owner': user['id'], 'invite_code': f"TEST-{NEXT_CAMPAIGN_ID:04d}" }
+        NEXT_CAMPAIGN_ID += 1
+        CAMPAIGNS.append(camp)
+
+    # add membership if not exists
+    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
+        MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
+
+    # Return the campaign object (frontend will select it)
+    return jsonify(camp)
+
+
+@app.route('/api/campaigns/public', methods=['GET'])
+def public_campaigns():
+    # Return all campaigns (public listing). For production, add pagination/filters.
+    return jsonify(CAMPAIGNS)
+
+
+@app.route('/api/campaigns/<int:cid>/join', methods=['POST'])
+def join_campaign_by_id(cid):
+    user = get_user_from_auth()
+    if not user:
+        return jsonify({"message": "unauthorized"}), 401
+    camp = next((c for c in CAMPAIGNS if c['id'] == cid), None)
+    if not camp:
+        return jsonify({"message": "campaign not found"}), 404
+    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
+        MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
+    return jsonify(camp)
+
+
+
 @app.route('/api/campaigns/join', methods=['POST'])
 def join_campaign():
     data = request.get_json() or {}
@@ -329,6 +376,37 @@ def list_characters(cid):
     return jsonify(chars)
 
 
+@app.route('/api/campaigns/<int:cid>/characters', methods=['POST'])
+def create_character(cid):
+    global NEXT_CHARACTER_ID
+    user = get_user_from_auth()
+    if not user:
+        return jsonify({"message": "unauthorized"}), 401
+    # simple membership check
+    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == cid and m['user_id'] == user['id']):
+        return jsonify({"message": "forbidden"}), 403
+    data = request.get_json() or {}
+    name = data.get('name') or ''
+    maxHp = data.get('maxHp') or 0
+    portrait = data.get('portrait') or ''
+    try:
+        maxHp = int(maxHp)
+    except Exception:
+        maxHp = 0
+    char = {
+        'id': NEXT_CHARACTER_ID,
+        'campaign_id': cid,
+        'user_id': user['id'],
+        'name': name,
+        'maxHp': maxHp,
+        'portrait': portrait
+    }
+    NEXT_CHARACTER_ID += 1
+    CHARACTERS.append(char)
+    return jsonify(char), 201
+
+
+
 @app.route('/api/users/me/active-campaign', methods=['PUT'])
 def set_active_campaign():
     user = get_user_from_auth()
@@ -355,6 +433,37 @@ def set_active_campaign():
     }
     token = jwt.encode(new_payload, JWT_SECRET, algorithm='HS256')
     return jsonify({'token': token})
+
+
+@app.route('/api/users/me/character', methods=['GET'])
+def get_my_character():
+    user = get_user_from_auth()
+    if not user:
+        return jsonify({'message': 'unauthorized'}), 401
+    # return stored character or 404
+    ch = user.get('character')
+    if not ch:
+        return jsonify({}), 200
+    return jsonify(ch), 200
+
+
+@app.route('/api/users/me/character', methods=['PUT'])
+def set_my_character():
+    user = get_user_from_auth()
+    if not user:
+        return jsonify({'message': 'unauthorized'}), 401
+    data = request.get_json() or {}
+    # Only allow simple fields for now
+    name = data.get('name')
+    maxHp = data.get('maxHp')
+    # validate
+    try:
+        maxHp = int(maxHp) if maxHp is not None else None
+    except Exception:
+        return jsonify({'message': 'maxHp must be a number'}), 400
+    char = {'name': name or '', 'maxHp': maxHp if maxHp is not None else 0}
+    user['character'] = char
+    return jsonify(char), 200
 
 
 if __name__ == '__main__':

@@ -27,10 +27,33 @@ export default function CharacterSheetModal({open, onClose}){
     }
   }, [open])
 
-  function save(){
+  async function save(){
     try{
-      const sheet = { name: name || 'Unnamed', maxHp: Number(maxHp) || 0 }
-      localStorage.setItem('npcchatter:character', JSON.stringify(sheet))
+      const portrait = `https://api.dicebear.com/6.x/avataaars/svg?seed=${encodeURIComponent(name || (Date.now()))}`
+      const sheet = { name: name || 'Unnamed', maxHp: Number(maxHp) || 0, portrait }
+      // Try saving to server if user is authenticated
+      try{
+        const clientMod = await import('../../../api/client')
+        const client = clientMod.default
+        // Persist as a campaign-scoped character when active campaign is present
+        const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+        if (active){
+          // find campaign id
+          const camps = await client.get('/campaigns')
+          const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
+          if (found){
+            await client.post(`/campaigns/${found.id}/characters`, sheet)
+          } else {
+            await client.put('/users/me/character', sheet)
+          }
+        } else {
+          await client.put('/users/me/character', sheet)
+        }
+      }catch(e){
+        // ignore server errors and fallback to localStorage
+        console.debug('Could not save character to server, falling back to localStorage', e)
+        localStorage.setItem('npcchatter:character', JSON.stringify(sheet))
+      }
       window.dispatchEvent(new CustomEvent('npcchatter:character-updated', {detail: sheet}))
       onClose && onClose()
     }catch(e){

@@ -139,6 +139,24 @@ export default function Topbar() {
           </ul>
         </div>
   <button className="btn btn-ghost btn-sm" onClick={()=>setCampaignModalOpen(true)}>Campaigns</button>
+  {!selectedCampaign && (
+    <button
+      className="btn btn-sm btn-primary"
+      onClick={async ()=>{
+        try{
+          const clientMod = await import('../api/client')
+          const client = clientMod.default
+          const camp = await client.post('/campaigns/test/join')
+          const campaignName = camp?.name || camp?.id
+          if (campaignName) setSelectedCampaign(campaignName)
+          // Topbar effect will persist selection server-side
+        }catch(e){
+          console.error('Failed to join test campaign', e)
+          alert('Failed to join test campaign: ' + (e.message || e))
+        }
+      }}
+    >Join Test Campaign</button>
+  )}
   <CampaignsModal open={campaignModalOpen} onClose={()=>setCampaignModalOpen(false)} />
       </div>
     </div>
