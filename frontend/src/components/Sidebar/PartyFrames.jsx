@@ -14,7 +14,6 @@ function avatarFor(seed){
 export default function PartyFrames(){
   return (
     <div className="card bg-base-200 p-3">
-      <div className="font-semibold mb-2">Party</div>
       <div className="space-y-2">
         {NAMES.map((n, i) => (
           // mock hp values per member

@@ -6,13 +6,38 @@ import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-CORS(app)
 
-# In-memory NPC store
+# ----- Environment-aware CORS (safe for prod) -----
+# APP_ENV: "development" or "production" (default: "production")
+APP_ENV = os.environ.get("APP_ENV", os.environ.get("FLASK_ENV", "production")).lower()
+
+# In production, set ALLOWED_ORIGINS to a comma-separated list of origins, e.g.
+# ALLOWED_ORIGINS="https://npcchatter.com,https://www.npcchatter.com"
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "")
+
+if APP_ENV == "development":
+    # Only allow Vite dev server in local dev
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": ["http://localhost:5173"]}},
+        supports_credentials=False,  # you're returning JWT in JSON, not cookies
+        expose_headers=["Content-Type"]
+    )
+elif ALLOWED_ORIGINS:
+    # Restrict production to configured origins
+    origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": origins}},
+        supports_credentials=False,
+        expose_headers=["Content-Type"]
+    )
+# If no ALLOWED_ORIGINS set in prod, CORS is effectively off (same-origin only).
+
+# ----- In-memory stores (demo only) -----
 NPCS = []
 NEXT_ID = 1
 
-# In-memory user store (very small demo; replace with DB in production)
 USERS = []
 NEXT_USER_ID = 1
 
@@ -93,4 +118,7 @@ def login():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5001)), debug=True)
+    # Port defaults to 5001 to match your dev setup
+    port = int(os.environ.get('PORT', 5001))
+    debug = os.environ.get('DEBUG', 'true' if APP_ENV == 'development' else 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)
