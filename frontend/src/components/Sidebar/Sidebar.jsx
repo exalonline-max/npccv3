@@ -6,6 +6,23 @@ import ChatLog from './ChatLog'
 export default function Sidebar(){
   const [bottomInset, setBottomInset] = React.useState(0)
 
+  // Do not render the sidebar unless an active campaign is selected
+  let hasActive = false
+  try{
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    if (token){
+      try{
+        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+        if (payload && (payload.activeCampaign || payload['active-campaign'])) hasActive = true
+      }catch(e){}
+    }
+    if (!hasActive){
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+      if (stored) hasActive = true
+    }
+  }catch(e){}
+  if (!hasActive) return null
+
   React.useEffect(()=>{
     function recompute(){
       const bar = document.getElementById('player-bottom-bar')

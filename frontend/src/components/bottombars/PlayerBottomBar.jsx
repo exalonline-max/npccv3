@@ -2,6 +2,22 @@ import React, { useState, useEffect, useRef } from 'react'
 
 // Player-bottom bar: full-width fixed bar that aligns its inner content to the page <main>
 export default function PlayerBottomBar(){
+  // Don't render the bottom bar unless the user has an active campaign
+  let hasActive = false
+  try{
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    if (token){
+      try{
+        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+        if (payload && (payload.activeCampaign || payload['active-campaign'])) hasActive = true
+      }catch(e){}
+    }
+    if (!hasActive){
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+      if (stored) hasActive = true
+    }
+  }catch(e){}
+  if (!hasActive) return null
   const [activeTab, setActiveTab] = useState('Character')
   const tabs = ['Character','Actions','Inventory']
   const [mainLeft, setMainLeft] = useState(null)

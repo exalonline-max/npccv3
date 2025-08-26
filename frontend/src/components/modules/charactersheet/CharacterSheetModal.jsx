@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 export default function CharacterSheetModal({open, onClose}){
   const [name, setName] = useState('')
   const [maxHp, setMaxHp] = useState(10)
+  const [renderError, setRenderError] = useState(null)
 
   React.useEffect(()=>{
     if (!open) return
@@ -10,16 +11,6 @@ export default function CharacterSheetModal({open, onClose}){
     window.addEventListener('keydown', onKey)
     return ()=> window.removeEventListener('keydown', onKey)
   }, [open, onClose])
-
-  if (!open) return null
-
-  function save(){
-    // store locally for now; we'll add server persistence later
-    const sheet = { name: name || 'Unnamed', maxHp: Number(maxHp) || 0 }
-    localStorage.setItem('npcchatter:character', JSON.stringify(sheet))
-    window.dispatchEvent(new CustomEvent('npcchatter:character-updated', {detail: sheet}))
-    onClose && onClose()
-  }
 
   // Load existing on open
   React.useEffect(()=>{
@@ -31,28 +22,62 @@ export default function CharacterSheetModal({open, onClose}){
         setName(s.name || '')
         setMaxHp(s.maxHp || 10)
       }
-    }catch(e){}
+    }catch(e){
+      console.error('Failed to load character from localStorage', e)
+    }
   }, [open])
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-base-100 rounded shadow-lg w-96 p-4">
-        <h3 className="font-semibold mb-2">Character Sheet</h3>
-        <div className="mb-2">
-          <label className="label"><span className="label-text">Name</span></label>
-          <input className="input input-sm w-full" value={name} onChange={e=>setName(e.target.value)} placeholder="Character name" />
-        </div>
+  function save(){
+    try{
+      const sheet = { name: name || 'Unnamed', maxHp: Number(maxHp) || 0 }
+      localStorage.setItem('npcchatter:character', JSON.stringify(sheet))
+      window.dispatchEvent(new CustomEvent('npcchatter:character-updated', {detail: sheet}))
+      onClose && onClose()
+    }catch(e){
+      console.error('Failed to save character', e)
+      setRenderError('Failed to save character')
+    }
+  }
 
-        <div className="mb-2">
-          <label className="label"><span className="label-text">Max HP</span></label>
-          <input type="number" className="input input-sm w-full" value={maxHp} onChange={e=>setMaxHp(e.target.value)} />
-        </div>
+  if (!open) return null
 
-        <div className="flex justify-end space-x-2 mt-4">
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary btn-sm" onClick={save}>Save</button>
+  // Defensive render so an exception here won't blank the entire app
+  try{
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-base-100 rounded shadow-lg w-96 p-4">
+          <h3 className="font-semibold mb-2">Character Sheet</h3>
+          {renderError && <div className="mb-2 text-sm text-error">{renderError}</div>}
+          <div className="mb-2">
+            <label className="label"><span className="label-text">Name</span></label>
+            <input className="input input-sm w-full" value={name} onChange={e=>setName(e.target.value)} placeholder="Character name" />
+          </div>
+
+          <div className="mb-2">
+            <label className="label"><span className="label-text">Max HP</span></label>
+            <input type="number" className="input input-sm w-full" value={maxHp} onChange={e=>setMaxHp(e.target.value)} />
+          </div>
+
+          <div className="flex justify-end space-x-2 mt-4">
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={save}>Save</button>
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }catch(e){
+    console.error('CharacterSheetModal render error', e)
+    setRenderError('An unexpected error occurred')
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-base-100 rounded shadow-lg w-96 p-4">
+          <h3 className="font-semibold mb-2">Character Sheet</h3>
+          <div className="text-sm text-error">An error occurred rendering the character sheet. Check console.</div>
+          <div className="flex justify-end mt-4">
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 }
