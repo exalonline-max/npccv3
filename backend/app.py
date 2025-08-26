@@ -46,8 +46,24 @@ if APP_ENV == "development":
         expose_headers=["Content-Type"]
     )
 elif ALLOWED_ORIGINS:
-    # Restrict production to configured origins
-    origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
+    # Restrict production to configured origins.
+    # Render's `fromService.property: host` may supply a bare hostname like
+    # "www.npcchatter.com" (no scheme). Browsers send an Origin header that
+    # includes the scheme (https://...), so normalize entries here. Accept
+    # a single asterisk '*' to mean allow all origins (use carefully).
+    raw = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
+    if len(raw) == 1 and raw[0] == '*':
+        origins = "*"
+    else:
+        origins = []
+        for o in raw:
+            if '://' in o:
+                origins.append(o)
+            else:
+                # add both https and http variants so hostname-only values
+                # (from some platform envs) match incoming Origin headers.
+                origins.append(f"https://{o}")
+                origins.append(f"http://{o}")
     CORS(
         app,
         resources={r"/api/*": {"origins": origins}},
