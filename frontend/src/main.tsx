@@ -1,9 +1,17 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import ErrorBoundary from './components/ErrorBoundary'
+import ApiHealthBanner from './components/ApiHealthBanner'
 
-createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+const root = createRoot(document.getElementById('root')!)
+root.render(
+  React.createElement(
+    React.StrictMode,
+    null,
+    React.createElement(ErrorBoundary, null,
+      React.createElement(ApiHealthBanner, null),
+      React.createElement(App, null)
+    )
+  )
 )

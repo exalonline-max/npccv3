@@ -6,6 +6,9 @@ import datetime
 import jwt
 import redis  # Added import for Redis support
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from sqlalchemy.exc import OperationalError
 
 # Serve static frontend if built into ../frontend/dist
 STATIC_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
@@ -76,20 +79,103 @@ elif ALLOWED_ORIGINS:
 NPCS = []
 NEXT_ID = 1
 
+# Database setup (use DATABASE_URL or fallback to local SQLite file)
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    DATABASE_URL = 'sqlite:///./data.db'
+
+engine = create_engine(DATABASE_URL, echo=False, connect_args={'check_same_thread': False} if DATABASE_URL.startswith('sqlite') else {})
+SessionLocal = sessionmaker(bind=engine)
+Base = declarative_base()
+
+
+# Models
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    username = Column(String)
+    password_hash = Column(String)
+    character = relationship('Character', back_populates='user', uselist=False)
+
+
+class Campaign(Base):
+    __tablename__ = 'campaigns'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    owner = Column(Integer)
+    invite_code = Column(String)
+    characters = relationship('Character', back_populates='campaign')
+
+
+class Membership(Base):
+    __tablename__ = 'memberships'
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey('campaigns.id'))
+    user_id = Column(Integer, ForeignKey('users.id'))
+    role = Column(String)
+
+
+class Character(Base):
+    __tablename__ = 'characters'
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey('campaigns.id'))
+    user_id = Column(Integer, ForeignKey('users.id'))
+    name = Column(String)
+    maxHp = Column(Integer)
+    portrait = Column(Text)
+    user = relationship('User', back_populates='character')
+    campaign = relationship('Campaign', back_populates='characters')
+
+
+# create tables if missing
+try:
+    Base.metadata.create_all(bind=engine)
+except OperationalError:
+    print('Warning: could not create DB tables at startup')
+
+# Lightweight DB helpers (used in endpoints below)
+def db_get_user_by_email(email):
+    s = SessionLocal()
+    try:
+        return s.query(User).filter(User.email == email).first()
+    finally:
+        s.close()
+
+def db_get_user_by_id(uid):
+    s = SessionLocal()
+    try:
+        return s.query(User).filter(User.id == uid).first()
+    finally:
+        s.close()
+
+def db_create_user(email, username, password_hash):
+    s = SessionLocal()
+    try:
+        u = User(email=email, username=username, password_hash=password_hash)
+        s.add(u)
+        s.commit()
+        s.refresh(u)
+        return u
+    finally:
+        s.close()
+
+
+# In-memory fallback stores (kept for compatibility until full DB migration)
 USERS = []
 NEXT_USER_ID = 1
 
-# Campaigns / messages / characters (in-memory demo stores)
 CAMPAIGNS = []
 NEXT_CAMPAIGN_ID = 1
 
-MEMBERSHIPS = []  # { campaign_id, user_id, role }
+MEMBERSHIPS = []
 
 MESSAGES = []
 NEXT_MESSAGE_ID = 1
 
 CHARACTERS = []
 NEXT_CHARACTER_ID = 1
+
 
 # JWT secret (override with env var in production)
 JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
@@ -107,11 +193,25 @@ def make_token(user):
 def get_user_from_auth():
     auth = request.headers.get('Authorization') or ''
     if not auth.startswith('Bearer '):
+        print('get_user_from_auth: no Bearer Authorization header present')
         return None
     token = auth.split(' ', 1)[1]
     try:
         data = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
         uid = data.get('sub')
+        # Prefer DB-backed users when available. If a DB user exists with
+        # this id, return a lightweight dict (mirror) so older endpoints
+        # that expect a dict (not a SQLAlchemy object) continue to work.
+        try:
+            dbu = db_get_user_by_id(uid)
+            found = bool(dbu)
+            print(f'get_user_from_auth: token decoded uid={uid} type={type(uid).__name__} db_user_found={found}')
+            if dbu:
+                return {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
+        except Exception as e:
+            print('get_user_from_auth: db lookup exception', str(e))
+            pass
+        # Fallback to in-memory USERS mirror
         return next((u for u in USERS if u['id'] == uid), None)
     except Exception:
         return None
@@ -137,6 +237,18 @@ def ping_redis():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({"ok": True})
+
+
+@app.route('/api/env', methods=['GET'])
+def show_env():
+    # Safe debug endpoint: do not return secrets. Useful to confirm what the
+    # running instance sees for CORS and optional services.
+    return jsonify({
+        'app_env': APP_ENV,
+        'allowed_origins': ALLOWED_ORIGINS,
+        'database_url_set': bool(os.environ.get('DATABASE_URL')),
+        'redis_url_set': bool(os.environ.get('REDIS_URL') or os.environ.get('REDIS_URI'))
+    })
 
 
 # Serve SPA static files when available (single-host mode)
@@ -186,18 +298,35 @@ def register():
     if not email or not password or not username:
         return jsonify({"message": "email, username and password are required"}), 400
     # check duplicate
-    if any(u['email'] == email for u in USERS):
+    # prefer DB-backed users if available
+    existing = db_get_user_by_email(email)
+    if existing:
         return jsonify({"message": "email already exists"}), 400
-    user = {
-        'id': NEXT_USER_ID,
-        'email': email,
-        'username': username,
-        'password_hash': generate_password_hash(password)
-    }
-    NEXT_USER_ID += 1
-    USERS.append(user)
-    token = make_token(user)
-    return jsonify({"token": token}), 201
+    # create in DB
+    pwd_hash = generate_password_hash(password)
+    try:
+        new_user = db_create_user(email, username, pwd_hash)
+        # add a simple in-memory mirror for older endpoints still using USERS
+        global NEXT_USER_ID
+        mirror = {'id': new_user.id, 'email': new_user.email, 'username': new_user.username, 'password_hash': new_user.password_hash}
+        NEXT_USER_ID = max(NEXT_USER_ID, new_user.id + 1)
+        USERS.append(mirror)
+        token = make_token(mirror)
+        return jsonify({"token": token}), 201
+    except Exception:
+        # fallback to in-memory creation if DB fails
+        if any(u['email'] == email for u in USERS):
+            return jsonify({"message": "email already exists"}), 400
+        user = {
+            'id': NEXT_USER_ID,
+            'email': email,
+            'username': username,
+            'password_hash': generate_password_hash(password)
+        }
+        NEXT_USER_ID += 1
+        USERS.append(user)
+        token = make_token(user)
+        return jsonify({"token": token}), 201
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -207,6 +336,15 @@ def login():
     password = data.get('password')
     if not email or not password:
         return jsonify({"message": "email and password are required"}), 400
+    # prefer DB lookup
+    dbu = db_get_user_by_email(email)
+    if dbu:
+        if not check_password_hash(dbu.password_hash, password):
+            return jsonify({"message": "invalid credentials"}), 401
+        # create mirror token payload
+        mirror = {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
+        token = make_token(mirror)
+        return jsonify({"token": token}), 200
     user = next((u for u in USERS if u['email'] == email), None)
     if not user or not check_password_hash(user['password_hash'], password):
         return jsonify({"message": "invalid credentials"}), 401
@@ -393,17 +531,31 @@ def create_character(cid):
         maxHp = int(maxHp)
     except Exception:
         maxHp = 0
-    char = {
-        'id': NEXT_CHARACTER_ID,
-        'campaign_id': cid,
-        'user_id': user['id'],
-        'name': name,
-        'maxHp': maxHp,
-        'portrait': portrait
-    }
-    NEXT_CHARACTER_ID += 1
-    CHARACTERS.append(char)
-    return jsonify(char), 201
+    # Try DB persistence first
+    try:
+        s = SessionLocal()
+        c = Character(campaign_id=cid, user_id=user['id'], name=name, maxHp=maxHp, portrait=portrait)
+        s.add(c)
+        s.commit()
+        s.refresh(c)
+        res = {'id': c.id, 'campaign_id': c.campaign_id, 'user_id': c.user_id, 'name': c.name, 'maxHp': c.maxHp, 'portrait': c.portrait}
+        # mirror to in-memory
+        CHARACTERS.append(res)
+        NEXT_CHARACTER_ID = max(NEXT_CHARACTER_ID, c.id + 1)
+        return jsonify(res), 201
+    except Exception:
+        # DB failed - fallback to in-memory
+        char = {
+            'id': NEXT_CHARACTER_ID,
+            'campaign_id': cid,
+            'user_id': user['id'],
+            'name': name,
+            'maxHp': maxHp,
+            'portrait': portrait
+        }
+        NEXT_CHARACTER_ID += 1
+        CHARACTERS.append(char)
+        return jsonify(char), 201
 
 
 

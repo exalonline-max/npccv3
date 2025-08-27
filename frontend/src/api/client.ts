@@ -11,7 +11,29 @@ if (_base && !/^https?:\/\//i.test(_base)) {
 if (_base && /^https:\/\/[^.\/]+$/.test(_base)) {
   _base = _base + '.onrender.com'
 }
-const API_BASE = (_base.replace(/\/$/, '') || '') + '/api'
+let API_BASE = (_base.replace(/\/$/, '') || '') + '/api'
+
+// Runtime fallback: if the application was built without VITE_API_BASE
+// the client will be using a relative '/api' path. That can cause POST
+// requests to be handled by the static server (rewrite to index.html)
+// which returns HTML or a 405. When running on Render's default domain
+// (hostname ends with .onrender.com) we can safely point API requests to
+// the backend service used in `render.yaml`.
+if (typeof window !== 'undefined') {
+  try {
+    if (API_BASE === '/api') {
+      const host = window.location.hostname || ''
+      if (host.endsWith('.onrender.com')) {
+        const fallback = 'https://npcchatter-backend.onrender.com/api'
+        // eslint-disable-next-line no-console
+        console.warn('VITE_API_BASE not set; falling back to', fallback)
+        API_BASE = fallback
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
 
 export { API_BASE }
 
@@ -39,7 +61,16 @@ async function req(path: string, opts: ReqOptions = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   })
   if (!res.ok) {
+    // Try to produce a helpful error. If the server returned HTML it's
+    // usually because the request hit the static frontend (rewrite to
+    // index.html) or some proxy that doesn't allow the HTTP method.
+    const contentType = res.headers.get('content-type') || ''
     const text = await res.text()
+    if (contentType.includes('text/html')) {
+      const preview = text.replace(/\s+/g, ' ').slice(0, 300)
+      throw new Error(`Unexpected HTML response from API (status=${res.status}): ${preview}... - this often means VITE_API_BASE is not pointing at the backend and the static server handled the request.`)
+    }
+    // otherwise return the raw body or statusText
     throw new Error(text || res.statusText)
   }
   return res.status === 204 ? null : res.json()
