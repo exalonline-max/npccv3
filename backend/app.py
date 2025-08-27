@@ -280,7 +280,8 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
 
 def make_token(user):
     payload = {
-        'sub': user['id'],
+    # encode subject as string for compatibility with JWT libraries
+    'sub': str(user['id']),
         'email': user['email'],
         'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
     }
@@ -289,37 +290,76 @@ def make_token(user):
 
 def get_user_from_auth():
     # Try common locations for the token. Don't print tokens or secrets.
-    auth = request.headers.get('Authorization') or request.environ.get('HTTP_AUTHORIZATION') or ''
-    # Fallback: some clients or proxies may provide the token in the JSON body or query param
-    if not auth and request.is_json:
+    token = None
+    token_source = None
+    # 1) Standard Authorization header (case-insensitive)
+    try:
+        auth_header = request.headers.get('Authorization') or request.environ.get('HTTP_AUTHORIZATION')
+        if not auth_header:
+            # some WSGI frontends/proxies may lowercase or move headers — scan headers defensively
+            for k, v in request.headers.items():
+                if k.lower() == 'authorization':
+                    auth_header = v
+                    break
+        if auth_header:
+            token_source = 'header'
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(' ', 1)[1]
+            else:
+                # accept raw token value as well
+                token = auth_header
+    except Exception:
+        pass
+
+    # 2) JSON body (some clients may send token in body)
+    if not token and request.is_json:
         try:
             body = request.get_json(silent=True) or {}
             token_from_json = body.get('token') or body.get('access_token')
             if token_from_json:
+                token = token_from_json
+                token_source = 'json'
                 print('get_user_from_auth: using token from JSON body (debug fallback)')
-                auth = f'Bearer {token_from_json}'
         except Exception:
             pass
-    if not auth:
+
+    # 3) Query param
+    if not token:
         token_q = request.args.get('token') or request.args.get('access_token')
         if token_q:
+            token = token_q
+            token_source = 'query'
             print('get_user_from_auth: using token from query param (debug fallback)')
-            auth = f'Bearer {token_q}'
 
-    if not auth.startswith('Bearer '):
-        print('get_user_from_auth: no Bearer Authorization header present (checked headers, environ, body, query)')
+    # 4) Cookie fallback (conservative)
+    if not token:
+        try:
+            cookie_tok = request.cookies.get('token')
+            if cookie_tok:
+                token = cookie_tok
+                token_source = 'cookie'
+        except Exception:
+            pass
+
+    if not token:
+        print('get_user_from_auth: no token found (checked header/body/query/cookie)')
         return None
-    token = auth.split(' ', 1)[1]
     try:
         data = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
         uid = data.get('sub')
+        # normalize uid type: try to coerce numeric string to int for comparisons
+        try:
+            if isinstance(uid, str) and uid.isdigit():
+                uid = int(uid)
+        except Exception:
+            pass
         # Prefer DB-backed users when available. If a DB user exists with
         # this id, return a lightweight dict (mirror) so older endpoints
         # that expect a dict (not a SQLAlchemy object) continue to work.
         try:
             dbu = db_get_user_by_id(uid)
             found = bool(dbu)
-            print(f'get_user_from_auth: token decoded uid={uid} type={type(uid).__name__} db_user_found={found}')
+            print(f"get_user_from_auth: token decoded uid={uid} type={type(uid).__name__} db_user_found={found} (token_source={token_source})")
             if dbu:
                 return {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
         except Exception as e:
@@ -330,7 +370,7 @@ def get_user_from_auth():
     except Exception as e:
         # Safe debug: log the decode error message but never print the token or secrets
         try:
-            print('get_user_from_auth: token decode error', str(e))
+            print('get_user_from_auth: token decode error', str(e), f'(token_source={token_source})')
         except Exception:
             pass
         return None
