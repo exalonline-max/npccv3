@@ -288,9 +288,26 @@ def make_token(user):
 
 
 def get_user_from_auth():
-    auth = request.headers.get('Authorization') or ''
+    # Try common locations for the token. Don't print tokens or secrets.
+    auth = request.headers.get('Authorization') or request.environ.get('HTTP_AUTHORIZATION') or ''
+    # Fallback: some clients or proxies may provide the token in the JSON body or query param
+    if not auth and request.is_json:
+        try:
+            body = request.get_json(silent=True) or {}
+            token_from_json = body.get('token') or body.get('access_token')
+            if token_from_json:
+                print('get_user_from_auth: using token from JSON body (debug fallback)')
+                auth = f'Bearer {token_from_json}'
+        except Exception:
+            pass
+    if not auth:
+        token_q = request.args.get('token') or request.args.get('access_token')
+        if token_q:
+            print('get_user_from_auth: using token from query param (debug fallback)')
+            auth = f'Bearer {token_q}'
+
     if not auth.startswith('Bearer '):
-        print('get_user_from_auth: no Bearer Authorization header present')
+        print('get_user_from_auth: no Bearer Authorization header present (checked headers, environ, body, query)')
         return None
     token = auth.split(' ', 1)[1]
     try:
