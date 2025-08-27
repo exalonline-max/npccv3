@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.exc import OperationalError
+import json
 
 # Serve static frontend if built into ../frontend/dist
 STATIC_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
@@ -132,6 +133,8 @@ class Character(Base):
     name = Column(String)
     maxHp = Column(Integer)
     portrait = Column(Text)
+    # freeform JSON blob for attributes, skills, inventory, etc.
+    data = Column(Text)
     user = relationship('User', back_populates='character')
     campaign = relationship('Campaign', back_populates='characters')
 
@@ -766,8 +769,33 @@ def list_characters(cid):
     if not user:
         return jsonify([]), 401
     # membership check omitted for brevity in demo
-    chars = [c for c in CHARACTERS if c.get('campaign_id') == cid]
-    return jsonify(chars)
+    try:
+        s = SessionLocal()
+        try:
+            rows = s.query(Character).filter(Character.campaign_id == cid).all()
+            out = []
+            for r in rows:
+                try:
+                    blob_text = getattr(r, 'data', None)
+                    blob = json.loads(blob_text) if blob_text else {}
+                except Exception:
+                    blob = {}
+                obj = {
+                    'id': r.id,
+                    'campaign_id': r.campaign_id,
+                    'user_id': r.user_id,
+                    'name': r.name,
+                    'maxHp': r.maxHp,
+                    'portrait': r.portrait,
+                    **(blob if isinstance(blob, dict) else {})
+                }
+                out.append(obj)
+            return jsonify(out)
+        finally:
+            s.close()
+    except Exception:
+        chars = [c for c in CHARACTERS if c.get('campaign_id') == cid]
+        return jsonify(chars)
 
 
 @app.route('/api/campaigns/<int:cid>/characters', methods=['POST'])
@@ -787,15 +815,22 @@ def create_character(cid):
         maxHp = int(maxHp)
     except Exception:
         maxHp = 0
+    # include extra sheet fields
+    blob = {
+        'attributes': data.get('attributes') or {},
+        'skills': data.get('skills') or {},
+        'skillScores': data.get('skillScores') or data.get('skillVals') or {},
+        'inventory': data.get('inventory') or []
+    }
     # Try DB persistence first
     try:
         s = SessionLocal()
         try:
-            c = Character(campaign_id=cid, user_id=user['id'], name=name, maxHp=maxHp, portrait=portrait)
+            c = Character(campaign_id=cid, user_id=user['id'], name=name, maxHp=maxHp, portrait=portrait, data=json.dumps(blob))
             s.add(c)
             s.commit()
             s.refresh(c)
-            res = {'id': c.id, 'campaign_id': c.campaign_id, 'user_id': c.user_id, 'name': c.name, 'maxHp': c.maxHp, 'portrait': c.portrait}
+            res = {'id': c.id, 'campaign_id': c.campaign_id, 'user_id': c.user_id, 'name': c.name, 'maxHp': c.maxHp, 'portrait': c.portrait, **blob}
             # mirror to in-memory
             CHARACTERS.append(res)
             # keep in-memory id counters ahead of DB ids
@@ -816,7 +851,8 @@ def create_character(cid):
             'user_id': user['id'],
             'name': name,
             'maxHp': maxHp,
-            'portrait': portrait
+            'portrait': portrait,
+            **blob
         }
         NEXT_CHARACTER_ID += 1
         CHARACTERS.append(char)
@@ -883,7 +919,13 @@ def get_my_character():
         try:
             ch = s.query(Character).filter(Character.user_id == user['id']).first()
             if ch:
-                return jsonify({'id': ch.id, 'campaign_id': ch.campaign_id, 'user_id': ch.user_id, 'name': ch.name, 'maxHp': ch.maxHp, 'portrait': ch.portrait}), 200
+                try:
+                    blob_text = getattr(ch, 'data', None)
+                    blob = json.loads(blob_text) if blob_text else {}
+                except Exception:
+                    blob = {}
+                res = {'id': ch.id, 'campaign_id': ch.campaign_id, 'user_id': ch.user_id, 'name': ch.name, 'maxHp': ch.maxHp, 'portrait': ch.portrait, **(blob if isinstance(blob, dict) else {})}
+                return jsonify(res), 200
         finally:
             s.close()
     except Exception:
@@ -904,6 +946,10 @@ def set_my_character():
     name = data.get('name')
     maxHp = data.get('maxHp')
     portrait = data.get('portrait')
+    attributes = data.get('attributes') or {}
+    skills = data.get('skills') or {}
+    skillScores = data.get('skillScores') or data.get('skillVals') or {}
+    inventory = data.get('inventory') or []
     # validate
     try:
         maxHp = int(maxHp) if maxHp is not None else 0
@@ -915,20 +961,35 @@ def set_my_character():
         try:
             existing = s.query(Character).filter(Character.user_id == user['id']).first()
             if existing:
-                existing.name = name or existing.name
-                existing.maxHp = maxHp
-                existing.portrait = portrait or existing.portrait
+                setattr(existing, 'name', name or getattr(existing, 'name'))
+                setattr(existing, 'maxHp', maxHp)
+                setattr(existing, 'portrait', portrait or getattr(existing, 'portrait'))
+                # update blob
+                blob = {'attributes': attributes, 'skills': skills, 'skillScores': skillScores, 'inventory': inventory}
+                try:
+                    setattr(existing, 'data', json.dumps(blob))
+                except Exception:
+                    pass
                 s.add(existing)
                 s.commit()
                 s.refresh(existing)
                 ch = existing
             else:
                 campaign_id = data.get('campaign_id')
-                ch = Character(campaign_id=campaign_id, user_id=user['id'], name=name or '', maxHp=maxHp, portrait=portrait or '')
+                blob = {'attributes': attributes, 'skills': skills, 'skillScores': skillScores, 'inventory': inventory}
+                ch = Character(campaign_id=campaign_id, user_id=user['id'], name=name or '', maxHp=maxHp, portrait=portrait or '', data=json.dumps(blob))
                 s.add(ch)
                 s.commit()
                 s.refresh(ch)
             res = {'id': ch.id, 'campaign_id': ch.campaign_id, 'user_id': ch.user_id, 'name': ch.name, 'maxHp': ch.maxHp, 'portrait': ch.portrait}
+            # attach blob if present
+            try:
+                blob_text = getattr(ch, 'data', None)
+                blob = json.loads(blob_text) if blob_text else {}
+            except Exception:
+                blob = {}
+            if isinstance(blob, dict):
+                res.update(blob)
             # mirror into in-memory list for demo compatibility
             existing_mem = next((c for c in CHARACTERS if c.get('id') == res['id']), None)
             if not existing_mem:
@@ -943,9 +1004,13 @@ def set_my_character():
             existing['name'] = name or existing.get('name')
             existing['maxHp'] = maxHp
             existing['portrait'] = portrait or existing.get('portrait')
+            existing['attributes'] = attributes
+            existing['skills'] = skills
+            existing['skillScores'] = skillScores
+            existing['inventory'] = inventory
             return jsonify(existing), 200
         global NEXT_CHARACTER_ID
-        ch = {'id': NEXT_CHARACTER_ID, 'campaign_id': data.get('campaign_id'), 'user_id': user['id'], 'name': name or '', 'maxHp': maxHp, 'portrait': portrait or ''}
+        ch = {'id': NEXT_CHARACTER_ID, 'campaign_id': data.get('campaign_id'), 'user_id': user['id'], 'name': name or '', 'maxHp': maxHp, 'portrait': portrait or '', 'attributes': attributes, 'skills': skills, 'skillScores': skillScores, 'inventory': inventory}
         NEXT_CHARACTER_ID += 1
         CHARACTERS.append(ch)
         return jsonify(ch), 201

@@ -101,6 +101,27 @@ export default function Topbar() {
   }
 
   const [campaignModalOpen, setCampaignModalOpen] = React.useState(false)
+  const [userMenuOpen, setUserMenuOpen] = React.useState(false)
+  const userMenuRef = React.useRef(null)
+
+  // close menu on outside click or Escape
+  React.useEffect(()=>{
+    function onDocMouse(e){
+      if (!userMenuRef.current) return
+      if (userMenuOpen && !userMenuRef.current.contains(e.target)) {
+        setUserMenuOpen(false)
+      }
+    }
+    function onKey(e){
+      if (e.key === 'Escape' && userMenuOpen) setUserMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocMouse)
+    document.addEventListener('keydown', onKey)
+    return ()=>{
+      document.removeEventListener('mousedown', onDocMouse)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [userMenuOpen])
 
   return (
     <div className="navbar bg-base-100 shadow fixed top-0 left-0 right-0 z-40 h-16">
@@ -114,49 +135,30 @@ export default function Topbar() {
   <div className="flex-none pr-4 flex items-center space-x-2">
         
 
-        <div className="dropdown dropdown-end">
-          <label tabIndex={0} className="btn btn-ghost btn-circle avatar">
+  <div ref={userMenuRef} className={`dropdown dropdown-end ${userMenuOpen ? 'dropdown-open' : ''}`}>
+          <label tabIndex={0} className="btn btn-ghost btn-circle avatar" onClick={()=>setUserMenuOpen(u=>!u)}>
             <div className="w-10 rounded-full border">
               <img src={avatarUrl} alt="avatar" />
             </div>
           </label>
-          <ul tabIndex={0} className="mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-52">
-            <li className="px-2 py-1">
-              <div className="text-xs text-muted">Active campaign</div>
-              <div className="mt-1">
-                {campaignNames.length > 0 ? (
-                  <select className="select select-sm w-full" value={selectedCampaign || ''} onChange={(e)=>setSelectedCampaign(e.target.value)}>
-                    <option value="">None</option>
-                    {campaignNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
-                  </select>
-                ) : (
-                  <div className="text-sm text-muted">No campaigns in token</div>
-                )}
-              </div>
+          <ul tabIndex={0} className="mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-56">
+            <li className="px-2 py-2">
+              <button className="w-full text-left cursor-pointer" onClick={()=>{ setCampaignModalOpen(true); setUserMenuOpen(false); }}>
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted">Active campaign</span>
+                  {selectedCampaign ? (
+                    <span className="text-sm font-semibold truncate mt-1">{selectedCampaign}</span>
+                  ) : (
+                    <span className="text-sm text-muted mt-1">No active campaign</span>
+                  )}
+                </div>
+              </button>
             </li>
-            <li><a>Options</a></li>
-            <li><a onClick={logout}>Logout</a></li>
+            <li className="mt-1"><a className="justify-start" onClick={()=>setUserMenuOpen(false)}>Options</a></li>
+            <li><a onClick={()=>{ setUserMenuOpen(false); logout(); }}>Logout</a></li>
           </ul>
         </div>
-  <button className="btn btn-ghost btn-sm" onClick={()=>setCampaignModalOpen(true)}>Campaigns</button>
-  {!selectedCampaign && (
-    <button
-      className="btn btn-sm btn-primary"
-      onClick={async ()=>{
-        try{
-          const clientMod = await import('../api/client')
-          const client = clientMod.default
-          const camp = await client.post('/campaigns/test/join')
-          const campaignName = camp?.name || camp?.id
-          if (campaignName) setSelectedCampaign(campaignName)
-          // Topbar effect will persist selection server-side
-        }catch(e){
-          console.error('Failed to join test campaign', e)
-          alert('Failed to join test campaign: ' + (e.message || e))
-        }
-      }}
-    >Join Test Campaign</button>
-  )}
+  {/* Campaigns button moved into the user menu */}
   <CampaignsModal open={campaignModalOpen} onClose={()=>setCampaignModalOpen(false)} />
       </div>
     </div>

@@ -57,6 +57,20 @@ export default function PartyFrames(){
                 <div className="w-full bg-gray-200 rounded h-2 mt-1 overflow-hidden">
                   <div className="bg-red-500 h-2" style={{width: `${pct}%`}} />
                 </div>
+                {ch.attributes && (
+                  <div className="mt-2 text-xs grid grid-cols-6 gap-1">
+                    {Object.entries(ch.attributes).map(([k,v]) => (
+                      <div key={k} className="text-center border rounded py-1">{k}: {v}</div>
+                    ))}
+                  </div>
+                )}
+                {ch.skillScores && (
+                  <div className="mt-2 text-xs flex flex-wrap gap-1">
+                    {Object.entries(ch.skillScores).slice(0,6).map(([s,v]) => (
+                      <div key={s} className="badge badge-outline">{s}: {v}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )

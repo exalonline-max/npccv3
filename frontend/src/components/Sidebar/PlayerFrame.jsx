@@ -95,6 +95,31 @@ export default function PlayerFrame(){
         <div className="text-xs mt-1">{hp} / {maxHp}</div>
       </div>
 
+      {sheet && sheet.attributes && (
+        <div className="mt-3">
+          <div className="text-sm font-semibold mb-2">Attributes</div>
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            {Object.entries(sheet.attributes).map(([k,v]) => (
+              <div key={k} className="p-1 border rounded bg-neutral-100/50 text-center">
+                <div className="font-medium">{k}</div>
+                <div className="text-sm">{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sheet && sheet.skillScores && (
+        <div className="mt-3">
+          <div className="text-sm font-semibold mb-2">Skills</div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(sheet.skillScores).slice(0,8).map(([s,val]) => (
+              <div key={s} className="badge badge-outline">{s}: {val}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-3 flex items-center space-x-2">
         <div className={`badge ${status === 'Healthy' ? 'badge-success' : 'badge-error'}`}>{status}</div>
       </div>
