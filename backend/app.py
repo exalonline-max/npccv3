@@ -279,12 +279,23 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
 
 
 def make_token(user):
-    payload = {
     # encode subject as string for compatibility with JWT libraries
-    'sub': str(user['id']),
-        'email': user['email'],
+    payload = {
+        'sub': str(user['id']),
+        'email': user.get('email'),
         'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
     }
+    # optional convenience claims
+    if user.get('username'):
+        payload['username'] = user.get('username')
+    # include active campaign claims if present
+    ac = user.get('active_campaign') or user.get('active-campaign') or user.get('activeCampaign')
+    if ac is not None:
+        payload['active-campaign'] = ac
+        payload['activeCampaign'] = ac
+    # include campaigns list if present
+    if user.get('campaigns'):
+        payload['campaigns'] = user.get('campaigns')
     return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
 
@@ -396,6 +407,32 @@ def ping_redis():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({"ok": True})
+
+
+# Lightweight debug inspector. Safe for temporary use in production to help
+# confirm routing and header forwarding. Does NOT return Authorization header
+# value or any secrets — only booleans and route metadata.
+@app.route('/api/_debug/inspect', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def debug_inspect():
+    # Optional query param `path` to inspect a different path than the current one.
+    inspect_path = request.args.get('path') or request.path
+    inspect_method = (request.args.get('method') or request.method).upper()
+    # Find matching Flask rules for the provided path (exact rule matches only).
+    matches = []
+    try:
+        for r in app.url_map.iter_rules():
+            if r.rule == inspect_path:
+                methods = list(r.methods) if r.methods is not None else []
+                matches.append({'rule': r.rule, 'endpoint': r.endpoint, 'methods': sorted(methods)})
+    except Exception:
+        matches = []
+    return jsonify({
+        'ok': True,
+        'inspected_path': inspect_path,
+        'inspected_method': inspect_method,
+        'auth_header_present': bool(request.headers.get('Authorization')),
+        'matches': matches,
+    })
 
 
 @app.route('/api/env', methods=['GET'])
@@ -797,22 +834,42 @@ def set_active_campaign():
     # accept campaign id or name
     camp = None
     if isinstance(cid, int) or (isinstance(cid, str) and cid.isdigit()):
-        camp = next((c for c in CAMPAIGNS if c['id'] == int(cid)), None)
+        # try DB first
+        try:
+            db_c = db_get_campaign_by_id(int(cid))
+            if db_c:
+                camp = {'id': db_c.id, 'name': db_c.name, 'owner': db_c.owner, 'invite_code': db_c.invite_code}
+        except Exception:
+            camp = next((c for c in CAMPAIGNS if c['id'] == int(cid)), None)
     else:
-        camp = next((c for c in CAMPAIGNS if c['name'] == cid), None)
+        try:
+            db_c = db_get_campaign_by_name(cid) if cid is not None else None
+            if db_c:
+                camp = {'id': db_c.id, 'name': db_c.name, 'owner': db_c.owner, 'invite_code': db_c.invite_code}
+        except Exception:
+            camp = next((c for c in CAMPAIGNS if c['name'] == cid), None)
     if not camp and cid is not None:
         return jsonify({"message": "campaign not found"}), 404
-    # store on user object for demo
-    user['active_campaign'] = camp['id'] if camp else None
-    # return a refreshed token including active-campaign claim
-    new_payload = {
-        'sub': user['id'],
-        'email': user['email'],
-        'activeCampaign': CAMPAIGNS and (camp['name'] if camp else None),
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    }
-    token = jwt.encode(new_payload, JWT_SECRET, algorithm='HS256')
-    return jsonify({'token': token})
+    # If DB-backed user exists, return a refreshed token with claim; do not attempt to modify DB user object here
+    try:
+        dbu = db_get_user_by_id(user['id'])
+    except Exception:
+        dbu = None
+    if dbu:
+        mirror = {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
+        if camp:
+            mirror['active_campaign'] = camp['name']
+        token = make_token(mirror)
+        return jsonify({'token': token}), 200
+    # in-memory user mirror
+    u = next((u for u in USERS if u['id'] == user['id']), None)
+    if u is not None:
+        u['active_campaign'] = camp['id'] if camp else None
+    mirror = {'id': user['id'], 'email': user.get('email'), 'username': user.get('username')}
+    if camp:
+        mirror['active_campaign'] = camp['name']
+    token = make_token(mirror)
+    return jsonify({'token': token}), 200
 
 
 @app.route('/api/users/me/character', methods=['GET'])
@@ -820,11 +877,22 @@ def get_my_character():
     user = get_user_from_auth()
     if not user:
         return jsonify({'message': 'unauthorized'}), 401
-    # return stored character or 404
-    ch = user.get('character')
-    if not ch:
-        return jsonify({}), 200
-    return jsonify(ch), 200
+    # Prefer DB-backed character when possible
+    try:
+        s = SessionLocal()
+        try:
+            ch = s.query(Character).filter(Character.user_id == user['id']).first()
+            if ch:
+                return jsonify({'id': ch.id, 'campaign_id': ch.campaign_id, 'user_id': ch.user_id, 'name': ch.name, 'maxHp': ch.maxHp, 'portrait': ch.portrait}), 200
+        finally:
+            s.close()
+    except Exception:
+        pass
+    # Fallback to in-memory mirror on user or global CHARACTERS
+    ch = user.get('character') or next((c for c in CHARACTERS if c.get('user_id') == user['id']), None)
+    if ch:
+        return jsonify(ch), 200
+    return jsonify({}), 404
 
 
 @app.route('/api/users/me/character', methods=['PUT'])
@@ -833,17 +901,54 @@ def set_my_character():
     if not user:
         return jsonify({'message': 'unauthorized'}), 401
     data = request.get_json() or {}
-    # Only allow simple fields for now
     name = data.get('name')
     maxHp = data.get('maxHp')
+    portrait = data.get('portrait')
     # validate
     try:
-        maxHp = int(maxHp) if maxHp is not None else None
+        maxHp = int(maxHp) if maxHp is not None else 0
     except Exception:
         return jsonify({'message': 'maxHp must be a number'}), 400
-    char = {'name': name or '', 'maxHp': maxHp if maxHp is not None else 0}
-    user['character'] = char
-    return jsonify(char), 200
+    # Try DB persistence first
+    try:
+        s = SessionLocal()
+        try:
+            existing = s.query(Character).filter(Character.user_id == user['id']).first()
+            if existing:
+                existing.name = name or existing.name
+                existing.maxHp = maxHp
+                existing.portrait = portrait or existing.portrait
+                s.add(existing)
+                s.commit()
+                s.refresh(existing)
+                ch = existing
+            else:
+                campaign_id = data.get('campaign_id')
+                ch = Character(campaign_id=campaign_id, user_id=user['id'], name=name or '', maxHp=maxHp, portrait=portrait or '')
+                s.add(ch)
+                s.commit()
+                s.refresh(ch)
+            res = {'id': ch.id, 'campaign_id': ch.campaign_id, 'user_id': ch.user_id, 'name': ch.name, 'maxHp': ch.maxHp, 'portrait': ch.portrait}
+            # mirror into in-memory list for demo compatibility
+            existing_mem = next((c for c in CHARACTERS if c.get('id') == res['id']), None)
+            if not existing_mem:
+                CHARACTERS.append(res)
+            return jsonify(res), 200
+        finally:
+            s.close()
+    except Exception:
+        # fallback to in-memory
+        existing = next((c for c in CHARACTERS if c.get('user_id') == user['id']), None)
+        if existing:
+            existing['name'] = name or existing.get('name')
+            existing['maxHp'] = maxHp
+            existing['portrait'] = portrait or existing.get('portrait')
+            return jsonify(existing), 200
+        global NEXT_CHARACTER_ID
+        ch = {'id': NEXT_CHARACTER_ID, 'campaign_id': data.get('campaign_id'), 'user_id': user['id'], 'name': name or '', 'maxHp': maxHp, 'portrait': portrait or ''}
+        NEXT_CHARACTER_ID += 1
+        CHARACTERS.append(ch)
+        return jsonify(ch), 201
 
 
 if __name__ == '__main__':
