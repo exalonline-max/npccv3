@@ -20,7 +20,7 @@ export default function CampaignsModal({open, onClose}){
     setLoading(true)
     setMsg(null)
     try{
-      const res = await client.post('/campaigns/create', {name})
+  const res = await client.post('/campaigns', {name})
       // backend should return created campaign name or id
       const campaignName = res?.name || res?.id || name
       localStorage.setItem('activeCampaign', campaignName)

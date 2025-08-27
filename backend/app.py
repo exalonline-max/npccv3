@@ -75,6 +75,14 @@ elif ALLOWED_ORIGINS:
     )
 # If no ALLOWED_ORIGINS set in prod, CORS is effectively off (same-origin only).
 
+# Safe startup debug: print only whether important env vars are present (no secrets)
+print(
+    f"startup env presence: APP_ENV={APP_ENV}, "
+    f"DATABASE_URL_set={bool(os.environ.get('DATABASE_URL'))}, "
+    f"REDIS_url_set={bool(os.environ.get('REDIS_URL') or os.environ.get('REDIS_URI'))}, "
+    f"JWT_SECRET_set={bool(os.environ.get('JWT_SECRET'))}"
+)
+
 # ----- In-memory stores (demo only) -----
 NPCS = []
 NEXT_ID = 1
@@ -128,6 +136,15 @@ class Character(Base):
     campaign = relationship('Campaign', back_populates='characters')
 
 
+class Message(Base):
+    __tablename__ = 'messages'
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey('campaigns.id'))
+    author = Column(String)
+    text = Column(Text)
+    timestamp = Column(String)
+
+
 # create tables if missing
 try:
     Base.metadata.create_all(bind=engine)
@@ -157,6 +174,86 @@ def db_create_user(email, username, password_hash):
         s.commit()
         s.refresh(u)
         return u
+    finally:
+        s.close()
+
+
+# Campaign / Membership / Message DB helpers
+def db_create_campaign(name, owner_id, invite_code=None):
+    s = SessionLocal()
+    try:
+        ic = invite_code or f"INV-{int(datetime.datetime.utcnow().timestamp()) % 100000:05d}"
+        c = Campaign(name=name, owner=owner_id, invite_code=ic)
+        s.add(c)
+        s.commit()
+        s.refresh(c)
+        return c
+    finally:
+        s.close()
+
+def db_get_campaign_by_name(name):
+    s = SessionLocal()
+    try:
+        return s.query(Campaign).filter(Campaign.name == name).first()
+    finally:
+        s.close()
+
+def db_get_campaign_by_id(cid):
+    s = SessionLocal()
+    try:
+        return s.query(Campaign).filter(Campaign.id == cid).first()
+    finally:
+        s.close()
+
+def db_get_campaigns_for_user(uid):
+    s = SessionLocal()
+    try:
+        mids = s.query(Membership).filter(Membership.user_id == uid).all()
+        campaign_ids = [m.campaign_id for m in mids]
+        if not campaign_ids:
+            return []
+        camps = s.query(Campaign).filter(Campaign.id.in_(campaign_ids)).all()
+        return camps
+    finally:
+        s.close()
+
+def db_create_membership(campaign_id, user_id, role='player'):
+    s = SessionLocal()
+    try:
+        existing = s.query(Membership).filter(Membership.campaign_id == campaign_id, Membership.user_id == user_id).first()
+        if existing:
+            return existing
+        m = Membership(campaign_id=campaign_id, user_id=user_id, role=role)
+        s.add(m)
+        s.commit()
+        s.refresh(m)
+        return m
+    finally:
+        s.close()
+
+def db_get_memberships_for_user(uid):
+    s = SessionLocal()
+    try:
+        return s.query(Membership).filter(Membership.user_id == uid).all()
+    finally:
+        s.close()
+
+def db_create_message(campaign_id, author, text):
+    s = SessionLocal()
+    try:
+        ts = datetime.datetime.utcnow().isoformat()
+        m = Message(campaign_id=campaign_id, author=author, text=text, timestamp=ts)
+        s.add(m)
+        s.commit()
+        s.refresh(m)
+        return m
+    finally:
+        s.close()
+
+def db_get_messages_for_campaign(cid, limit=100):
+    s = SessionLocal()
+    try:
+        return s.query(Message).filter(Message.campaign_id == cid).order_by(Message.id).limit(limit).all()
     finally:
         s.close()
 
@@ -213,7 +310,12 @@ def get_user_from_auth():
             pass
         # Fallback to in-memory USERS mirror
         return next((u for u in USERS if u['id'] == uid), None)
-    except Exception:
+    except Exception as e:
+        # Safe debug: log the decode error message but never print the token or secrets
+        try:
+            print('get_user_from_auth: token decode error', str(e))
+        except Exception:
+            pass
         return None
 
 
@@ -307,9 +409,14 @@ def register():
     try:
         new_user = db_create_user(email, username, pwd_hash)
         # add a simple in-memory mirror for older endpoints still using USERS
-        global NEXT_USER_ID
         mirror = {'id': new_user.id, 'email': new_user.email, 'username': new_user.username, 'password_hash': new_user.password_hash}
-        NEXT_USER_ID = max(NEXT_USER_ID, new_user.id + 1)
+        # ensure NEXT_USER_ID stays ahead of DB ids for in-memory mirrors
+        try:
+            new_id = getattr(new_user, 'id', None)
+            if new_id is not None:
+                NEXT_USER_ID = max(NEXT_USER_ID, int(new_id) + 1)
+        except Exception:
+            pass
         USERS.append(mirror)
         token = make_token(mirror)
         return jsonify({"token": token}), 201
@@ -339,7 +446,7 @@ def login():
     # prefer DB lookup
     dbu = db_get_user_by_email(email)
     if dbu:
-        if not check_password_hash(dbu.password_hash, password):
+        if not check_password_hash(str(dbu.password_hash), password):
             return jsonify({"message": "invalid credentials"}), 401
         # create mirror token payload
         mirror = {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
@@ -358,9 +465,13 @@ def list_campaigns():
     user = get_user_from_auth()
     if not user:
         return jsonify([])
-    # return campaigns where user is a member
-    member_ids = [m['campaign_id'] for m in MEMBERSHIPS if m['user_id'] == user['id']]
-    return jsonify([c for c in CAMPAIGNS if c['id'] in member_ids])
+    # Prefer DB-backed campaigns when available
+    try:
+        camps = db_get_campaigns_for_user(user['id'])
+        return jsonify([{'id': c.id, 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code} for c in camps])
+    except Exception:
+        member_ids = [m['campaign_id'] for m in MEMBERSHIPS if m['user_id'] == user['id']]
+        return jsonify([c for c in CAMPAIGNS if c['id'] in member_ids])
 
 
 @app.route('/api/campaigns', methods=['POST'])
@@ -373,12 +484,18 @@ def create_campaign():
     name = data.get('name')
     if not name:
         return jsonify({"message": "name required"}), 400
-    camp = { 'id': NEXT_CAMPAIGN_ID, 'name': name, 'owner': user['id'], 'invite_code': f"INV-{NEXT_CAMPAIGN_ID:04d}" }
-    NEXT_CAMPAIGN_ID += 1
-    CAMPAIGNS.append(camp)
-    # add membership for creator
-    MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'owner'})
-    return jsonify(camp), 201
+    # Try DB persistence first
+    try:
+        c = db_create_campaign(name, user['id'])
+        db_create_membership(c.id, user['id'], role='owner')
+        return jsonify({'id': c.id, 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code}), 201
+    except Exception:
+        camp = { 'id': NEXT_CAMPAIGN_ID, 'name': name, 'owner': user['id'], 'invite_code': f"INV-{NEXT_CAMPAIGN_ID:04d}" }
+        NEXT_CAMPAIGN_ID += 1
+        CAMPAIGNS.append(camp)
+        # add membership for creator
+        MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'owner'})
+        return jsonify(camp), 201
 
 
 @app.route('/api/campaigns/test/join', methods=['POST'])
@@ -393,25 +510,36 @@ def join_or_create_test_campaign():
 
     # Find an existing test campaign by canonical name
     test_name = 'Test Campaign'
-    camp = next((c for c in CAMPAIGNS if c.get('name') == test_name), None)
-    if not camp:
-        # create a predictable invite code for the test campaign
-        camp = { 'id': NEXT_CAMPAIGN_ID, 'name': test_name, 'owner': user['id'], 'invite_code': f"TEST-{NEXT_CAMPAIGN_ID:04d}" }
-        NEXT_CAMPAIGN_ID += 1
-        CAMPAIGNS.append(camp)
-
-    # add membership if not exists
-    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
-        MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
-
-    # Return the campaign object (frontend will select it)
-    return jsonify(camp)
+    try:
+        c = db_get_campaign_by_name(test_name)
+        if not c:
+            c = db_create_campaign(test_name, user['id'], invite_code=f"TEST-{int(datetime.datetime.utcnow().timestamp()) % 10000:04d}")
+        # ensure membership
+        db_create_membership(c.id, user['id'], role='player')
+        return jsonify({'id': c.id, 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code})
+    except Exception:
+        camp = next((c for c in CAMPAIGNS if c.get('name') == test_name), None)
+        if not camp:
+            camp = { 'id': NEXT_CAMPAIGN_ID, 'name': test_name, 'owner': user['id'], 'invite_code': f"TEST-{NEXT_CAMPAIGN_ID:04d}" }
+            NEXT_CAMPAIGN_ID += 1
+            CAMPAIGNS.append(camp)
+        if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
+            MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
+        return jsonify(camp)
 
 
 @app.route('/api/campaigns/public', methods=['GET'])
 def public_campaigns():
     # Return all campaigns (public listing). For production, add pagination/filters.
-    return jsonify(CAMPAIGNS)
+    try:
+        s = SessionLocal()
+        try:
+            camps = s.query(Campaign).all()
+            return jsonify([{'id': c.id, 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code} for c in camps])
+        finally:
+            s.close()
+    except Exception:
+        return jsonify(CAMPAIGNS)
 
 
 @app.route('/api/campaigns/<int:cid>/join', methods=['POST'])
@@ -419,12 +547,19 @@ def join_campaign_by_id(cid):
     user = get_user_from_auth()
     if not user:
         return jsonify({"message": "unauthorized"}), 401
-    camp = next((c for c in CAMPAIGNS if c['id'] == cid), None)
-    if not camp:
-        return jsonify({"message": "campaign not found"}), 404
-    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
-        MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
-    return jsonify(camp)
+    try:
+        c = db_get_campaign_by_id(cid)
+        if not c:
+            return jsonify({"message": "campaign not found"}), 404
+        db_create_membership(c.id, user['id'], role='player')
+        return jsonify({'id': c.id, 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code})
+    except Exception:
+        camp = next((c for c in CAMPAIGNS if c['id'] == cid), None)
+        if not camp:
+            return jsonify({"message": "campaign not found"}), 404
+        if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
+            MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
+        return jsonify(camp)
 
 
 
@@ -437,13 +572,24 @@ def join_campaign():
         return jsonify({"message": "unauthorized"}), 401
     if not code:
         return jsonify({"message": "code required"}), 400
-    camp = next((c for c in CAMPAIGNS if c.get('invite_code') == code or str(c.get('id')) == str(code)), None)
-    if not camp:
-        return jsonify({"message": "invalid code"}), 404
-    # add membership if not exists
-    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
-        MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
-    return jsonify(camp)
+    try:
+        # try by invite code first
+        s = SessionLocal()
+        try:
+            c = s.query(Campaign).filter((Campaign.invite_code == code) | (Campaign.id == (int(code) if str(code).isdigit() else -1))).first()
+        finally:
+            s.close()
+        if not c:
+            return jsonify({"message": "invalid code"}), 404
+        db_create_membership(c.id, user['id'], role='player')
+        return jsonify({'id': c.id, 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code})
+    except Exception:
+        camp = next((c for c in CAMPAIGNS if c.get('invite_code') == code or str(c.get('id')) == str(code)), None)
+        if not camp:
+            return jsonify({"message": "invalid code"}), 404
+        if not any(m for m in MEMBERSHIPS if m['campaign_id'] == camp['id'] and m['user_id'] == user['id']):
+            MEMBERSHIPS.append({'campaign_id': camp['id'], 'user_id': user['id'], 'role': 'player'})
+        return jsonify(camp)
 
 
 @app.route('/api/campaigns/<int:cid>/messages', methods=['GET'])
@@ -452,10 +598,18 @@ def list_campaign_messages(cid):
     if not user:
         return jsonify([]), 401
     # simple membership check
-    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == cid and m['user_id'] == user['id']):
-        return jsonify({"message": "forbidden"}), 403
-    msgs = [m for m in MESSAGES if m['campaign_id'] == cid]
-    return jsonify(msgs)
+    try:
+        # check membership via DB
+        mids = db_get_memberships_for_user(user['id'])
+        if not any(m.campaign_id == cid for m in mids):
+            return jsonify({"message": "forbidden"}), 403
+        msgs = db_get_messages_for_campaign(cid)
+        return jsonify([{'id': m.id, 'campaign_id': m.campaign_id, 'author': m.author, 'text': m.text, 'timestamp': m.timestamp} for m in msgs])
+    except Exception:
+        if not any(m for m in MEMBERSHIPS if m['campaign_id'] == cid and m['user_id'] == user['id']):
+            return jsonify({"message": "forbidden"}), 403
+        msgs = [m for m in MESSAGES if m['campaign_id'] == cid]
+        return jsonify(msgs)
 
 
 @app.route('/api/campaigns/<int:cid>/messages', methods=['POST'])
@@ -464,19 +618,27 @@ def post_campaign_message(cid):
     user = get_user_from_auth()
     if not user:
         return jsonify({"message": "unauthorized"}), 401
-    if not any(m for m in MEMBERSHIPS if m['campaign_id'] == cid and m['user_id'] == user['id']):
-        return jsonify({"message": "forbidden"}), 403
     data = request.get_json() or {}
     body = data.get('text') or data.get('body') or data.get('message') or ''
-    msg = {
-        'id': NEXT_MESSAGE_ID,
-        'campaign_id': cid,
-        'author': user['username'],
-        'text': body,
-        'timestamp': datetime.datetime.utcnow().isoformat()
-    }
-    NEXT_MESSAGE_ID += 1
-    MESSAGES.append(msg)
+    try:
+        # ensure membership via DB
+        mids = db_get_memberships_for_user(user['id'])
+        if not any(m.campaign_id == cid for m in mids):
+            return jsonify({"message": "forbidden"}), 403
+        m = db_create_message(cid, user['username'], body)
+        msg = {'id': m.id, 'campaign_id': m.campaign_id, 'author': m.author, 'text': m.text, 'timestamp': m.timestamp}
+    except Exception:
+        if not any(m for m in MEMBERSHIPS if m['campaign_id'] == cid and m['user_id'] == user['id']):
+            return jsonify({"message": "forbidden"}), 403
+        msg = {
+            'id': NEXT_MESSAGE_ID,
+            'campaign_id': cid,
+            'author': user['username'],
+            'text': body,
+            'timestamp': datetime.datetime.utcnow().isoformat()
+        }
+        NEXT_MESSAGE_ID += 1
+        MESSAGES.append(msg)
     # Emit to campaign room via SocketIO so connected clients receive it
     try:
         # pass room as third positional arg to avoid static linter warnings
@@ -534,15 +696,24 @@ def create_character(cid):
     # Try DB persistence first
     try:
         s = SessionLocal()
-        c = Character(campaign_id=cid, user_id=user['id'], name=name, maxHp=maxHp, portrait=portrait)
-        s.add(c)
-        s.commit()
-        s.refresh(c)
-        res = {'id': c.id, 'campaign_id': c.campaign_id, 'user_id': c.user_id, 'name': c.name, 'maxHp': c.maxHp, 'portrait': c.portrait}
-        # mirror to in-memory
-        CHARACTERS.append(res)
-        NEXT_CHARACTER_ID = max(NEXT_CHARACTER_ID, c.id + 1)
-        return jsonify(res), 201
+        try:
+            c = Character(campaign_id=cid, user_id=user['id'], name=name, maxHp=maxHp, portrait=portrait)
+            s.add(c)
+            s.commit()
+            s.refresh(c)
+            res = {'id': c.id, 'campaign_id': c.campaign_id, 'user_id': c.user_id, 'name': c.name, 'maxHp': c.maxHp, 'portrait': c.portrait}
+            # mirror to in-memory
+            CHARACTERS.append(res)
+            # keep in-memory id counters ahead of DB ids
+            try:
+                cid_val = getattr(c, 'id', None)
+                if cid_val is not None:
+                    NEXT_CHARACTER_ID = max(NEXT_CHARACTER_ID, int(cid_val) + 1)
+            except Exception:
+                pass
+            return jsonify(res), 201
+        finally:
+            s.close()
     except Exception:
         # DB failed - fallback to in-memory
         char = {
