@@ -39,8 +39,9 @@ export default function PlayerFrame(){
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
   const payload = token ? parseJwt(token) : null
   const [sheet, setSheet] = React.useState(null)
-  const seed = payload?.email || payload?.sub || String(Date.now())
-  const avatar = sheet?.portrait || `https://api.dicebear.com/6.x/avataaars/svg?seed=${encodeURIComponent(seed)}`
+  // stable seed based on the token payload; memoize so Date.now() isn't called each render
+  const seed = React.useMemo(() => payload?.email || payload?.sub || String(Date.now()), [payload])
+  const avatar = React.useMemo(() => sheet?.portrait || `https://api.dicebear.com/6.x/avataaars/svg?seed=${encodeURIComponent(seed)}`, [sheet, seed])
 
   React.useEffect(()=>{
     async function load(){
@@ -69,10 +70,12 @@ export default function PlayerFrame(){
     return ()=> window.removeEventListener('npcchatter:character-updated', onUpdate)
   }, [])
 
-  const name = sheet?.name || payload?.username || pickName(seed)
-  const maxHp = sheet?.maxHp || 40
-  const hp = Math.floor(Math.random() * (maxHp - 10)) + 10
-  const status = Math.random() > 0.85 ? 'Poisoned' : 'Healthy'
+  const name = React.useMemo(() => sheet?.name || payload?.username || pickName(seed), [sheet, payload, seed])
+  const maxHp = Number(sheet?.maxHp ?? 40)
+  // prefer persisted currentHp if present, otherwise use a stable fallback (half of max)
+  const hp = Number(sheet?.currentHp ?? Math.max(1, Math.floor(maxHp / 2)))
+  // prefer persisted status/conditions if present, otherwise default to Healthy
+  const status = sheet?.status || 'Healthy'
   const spellslots = {1:3,2:2,3:1}
 
   return (

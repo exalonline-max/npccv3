@@ -1,4 +1,5 @@
 import React from 'react'
+import { nextId } from '../lib/uid'
 
 const ToastContext = React.createContext(null)
 
@@ -12,7 +13,7 @@ export default function ToastProvider({children}){
   const [toasts, setToasts] = React.useState([])
 
   function addToast({title, body, timeout=4000}){
-    const id = Date.now() + Math.random()
+    const id = nextId()
     setToasts(t => [...t, {id, title, body}])
     if (timeout > 0) setTimeout(()=> setToasts(t => t.filter(x => x.id !== id)), timeout)
     return id

@@ -41,8 +41,8 @@ export default function PartyFrames(){
     <div className="card bg-base-200 p-3">
       <div className="space-y-2">
         {members.map(ch => {
-          const maxHp = ch.maxHp || 40
-          const hp = Math.floor(Math.random() * (maxHp - 5)) + 5
+          const maxHp = Number(ch.maxHp ?? 40)
+          const hp = Number(ch.currentHp ?? Math.max(1, Math.floor(maxHp / 2)))
           const pct = Math.max(0, Math.min(100, Math.floor((hp / maxHp) * 100)))
           return (
             <div key={ch.id} className="flex items-center space-x-3">

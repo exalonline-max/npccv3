@@ -24,16 +24,24 @@ export default function CampaignsModal({open, onClose}){
     if (!open) return
     let cancelled = false
     setCampaignsLoading(true)
-    client.get('/campaigns/public').then(res=>{
-      if (cancelled) return
-      if (Array.isArray(res)) setCampaigns(res)
-      else setCampaigns([])
-    }).catch(()=>{
-      if (cancelled) return
-      setCampaigns([])
-    }).finally(()=>{
-      if (!cancelled) setCampaignsLoading(false)
-    })
+    // prefer public listing, but fall back to /campaigns if not available
+    (async ()=>{
+      try{
+        let res = await client.get('/campaigns/public')
+        if ((!res || (Array.isArray(res) && res.length === 0))) {
+          // try fallback
+          res = await client.get('/campaigns')
+        }
+        if (cancelled) return
+        if (Array.isArray(res)) setCampaigns(res)
+        else setCampaigns([])
+      }catch(e){
+        if (cancelled) return
+        setCampaigns([])
+      }finally{
+        if (!cancelled) setCampaignsLoading(false)
+      }
+    })()
     return ()=>{ cancelled = true }
   }, [open])
 

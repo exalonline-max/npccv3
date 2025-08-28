@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { nextId } from '../../lib/uid'
 
 const initial = [
   {id:1, author:'DM', type:'alert', text:'You hear distant thunder...'},
@@ -46,7 +47,7 @@ export default function ChatLog(){
     function handler(e){
       const d = e.detail
       if (d && d.translated) {
-        setMsgs(prev => [...prev, {id: d.id, author: d.author, type: 'msg', translated: d.translated, original: d.original, lang: d.lang, pronunciation: d.pronunciation, avatar: d.avatar || null, timestamp: Date.now()}])
+        setMsgs(prev => [...prev, {id: d.id || nextId(), author: d.author, type: 'msg', translated: d.translated, original: d.original, lang: d.lang, pronunciation: d.pronunciation, avatar: d.avatar || null, timestamp: Date.now()}])
       }
     }
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -79,7 +80,7 @@ export default function ChatLog(){
           const data = await client.get('/campaigns/' + encodeURIComponent(campaign) + '/messages')
           if (Array.isArray(data)){
             setMsgs(prev => [...prev, ...data.map(m=>({
-              id: m.id || Date.now()+Math.random(),
+              id: m.id || nextId(),
               author: m.author || 'Unknown',
               type: m.type || 'msg',
               text: m.text || m.body || '',
