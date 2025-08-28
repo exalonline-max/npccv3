@@ -15,16 +15,17 @@ export default function AuthPage() {
             <button onClick={()=>setMode('login')} className={`btn ${mode==='login'? 'btn-active btn-primary':'btn-ghost'}`}>Login</button>
             <button onClick={()=>setMode('register')} className={`${mode==='register'? 'btn-active btn-success':'btn-ghost'} btn`}>Register</button>
             <button onClick={async ()=>{
-                // Temporary dev-login button for testing. Remove before production.
+                // Temporary dev-login button for testing. Create a fake unsigned token ONLY in Vite dev mode.
                 try {
                   const res = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
                   const token = res.data.token
                   localStorage.setItem('token', token)
                   window.location.href = '/dashboard'
                 } catch (err) {
-                  // Network error (no backend) fallback: create a mock token so frontend works offline
                   const isNetwork = !err.response
-                  if (isNetwork) {
+                  // Only use the offline fake token when running in dev mode. This prevents unsigned tokens
+                  // from being stored in production builds which the backend will reject with 401.
+                  if (isNetwork && import.meta.env && import.meta.env.DEV) {
                     const payload = {
                       email: 'dev@npcchatter.com',
                       username: 'DevUser',
@@ -41,6 +42,7 @@ export default function AuthPage() {
                   }
                 }
               }} className="btn btn-warning">Dev</button>
+            <span className="text-xs text-muted ml-2 self-center" title="Dev-only: creates a local fake token when backend is unreachable">(dev only)</span>
           </div>
           <div className="mt-4">
             {mode === 'login' ? <LoginForm /> : <RegisterForm />}
