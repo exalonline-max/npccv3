@@ -105,12 +105,35 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'devsecret')
 
 
 def make_token(user):
-    # create a simple JWT with subject claim
-    payload = {'sub': user.get('id')}
+    # create a JWT that includes at least the subject, and when available
+    # include email and username claims so clients can display user info
+    uid = None
+    email = None
+    username = None
     try:
-        return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+        if isinstance(user, dict):
+            uid = user.get('id')
+            email = user.get('email')
+            username = user.get('username')
+        else:
+            uid = getattr(user, 'id', None)
+            email = getattr(user, 'email', None)
+            username = getattr(user, 'username', None)
     except Exception:
-        # PyJWT v2 returns str, older versions may return bytes
+        pass
+    payload = {'sub': uid}
+    if email is not None:
+        try: payload['email'] = email
+        except Exception: pass
+    if username is not None:
+        try: payload['username'] = username
+        except Exception: pass
+    try:
+        token = jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+        # PyJWT v2 returns a str, older versions may return bytes
+        return token
+    except Exception:
+        # fallback: attempt to return whatever jwt.encode returns
         return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
 
