@@ -174,13 +174,21 @@ def get_user_from_auth():
                 uid = int(uid)
         except Exception:
             pass
+        # Try DB lookup first; if DB errors and we're in development allow
+        # falling back to the in-memory mirror so local dev still works.
+        db_error = False
         try:
             dbu = db_get_user_by_id(uid)
             if dbu:
                 return {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
         except Exception:
-            pass
-        return next((u for u in USERS if u['id'] == uid), None)
+            db_error = True
+        if APP_ENV == 'development' or not db_error:
+            # In development prefer the DB but accept the in-memory mirror.
+            return next((u for u in USERS if u['id'] == uid), None)
+        # In production, if the DB errored, don't silently return an in-memory
+        # user — treat the auth as unavailable.
+        return None
     except Exception:
         return None
 
@@ -425,7 +433,43 @@ def ping_redis():
 
 @app.route('/api/health', methods=['GET'])
 def health():
-    return jsonify({"ok": True})
+    # Basic health: check DB connectivity and optional Redis reachability.
+    # Return 200 when DB reachable. In production we want a clear 503 when
+    # the database is unavailable so orchestration / monitors can act.
+    # Do not include secrets in the response.
+    health = {'ok': False, 'database': False, 'redis': False}
+    # Check DB
+    try:
+        # Use engine connection for a lightweight check
+        from sqlalchemy import text as _text
+        conn = engine.connect()
+        try:
+            conn.execute(_text('SELECT 1'))
+            health['database'] = True
+        finally:
+            conn.close()
+    except Exception:
+        health['database'] = False
+    # Check Redis if configured (non-fatal)
+    try:
+        url = os.environ.get('REDIS_URL') or os.environ.get('REDIS_URI')
+        if url:
+            r = redis.from_url(url, socket_timeout=2)
+            try:
+                if r.ping():
+                    health['redis'] = True
+            except Exception:
+                health['redis'] = False
+        else:
+            health['redis'] = False
+    except Exception:
+        health['redis'] = False
+
+    health['ok'] = health['database']
+    if health['ok']:
+        return jsonify(health), 200
+    # If DB is unavailable return 503 so monitors know the instance is unhealthy.
+    return jsonify(health), 503
 
 
 # Lightweight debug inspector. Safe for temporary use in production to help
@@ -521,7 +565,7 @@ def register():
         existing = None
     if existing:
         return jsonify({"message": "email already exists"}), 400
-    # create in DB
+    # create in DB; if DB operations fail, only allow in-memory fallback in dev
     start_time = time.time()
     pwd_hash_start = time.time()
     pwd_hash = generate_password_hash(password)
@@ -530,7 +574,7 @@ def register():
         db_start = time.time()
         new_user = db_create_user(email, username, pwd_hash)
         db_end = time.time()
-        # add a simple in-memory mirror for older endpoints still using USERS
+        # add a simple in-memory mirror for older endpoints still using USERS (dev friendly)
         mirror = {'id': new_user.id, 'email': new_user.email, 'username': new_user.username, 'password_hash': new_user.password_hash}
         # ensure NEXT_USER_ID stays ahead of DB ids for in-memory mirrors
         try:
@@ -539,7 +583,9 @@ def register():
                 NEXT_USER_ID = max(NEXT_USER_ID, int(new_id) + 1)
         except Exception:
             pass
-        USERS.append(mirror)
+        # Only append mirror in development to avoid relying on in-memory state in prod
+        if APP_ENV == 'development':
+            USERS.append(mirror)
         token = make_token(mirror)
         total_end = time.time()
         if os.environ.get('DEBUG_AUTH') == 'true':
@@ -547,10 +593,14 @@ def register():
                 print(f"Auth timing (register): hash={pwd_hash_end-pwd_hash_start:.3f}s db={db_end-db_start:.3f}s total={total_end-start_time:.3f}s (db)")
             except Exception:
                 pass
-    # return token and user object for immediate client usage
-    return jsonify({"token": token, "user": mirror}), 201
+        # return token and user object for immediate client usage
+        return jsonify({"token": token, "user": mirror}), 201
     except Exception:
-        # fallback to in-memory creation if DB fails
+        # DB failed. In development, fall back to the in-memory user store so local
+        # testing remains convenient. In production return 503 so callers see the
+        # database is unavailable instead of silently using in-memory data.
+        if APP_ENV != 'development':
+            return jsonify({'message': 'database unavailable'}), 503
         db_fail_time = time.time()
         if any(u['email'] == email for u in USERS):
             return jsonify({"message": "email already exists"}), 400
@@ -579,12 +629,14 @@ def login():
     password = data.get('password')
     if not email or not password:
         return jsonify({"message": "email and password are required"}), 400
-    # prefer DB lookup; if DB fails, fall back to in-memory USERS
+    # prefer DB lookup; record DB errors so we can decide whether to fallback
     lookup_start = time.time()
+    db_error = False
     try:
         dbu = db_get_user_by_email(email)
     except Exception:
         dbu = None
+        db_error = True
     lookup_end = time.time()
     if dbu:
         # Optional debug logging for auth (do not enable in production logs unless safe)
@@ -610,6 +662,10 @@ def login():
                 pass
         # return token and user object so client can display user fields immediately
         return jsonify({"token": token, "user": mirror}), 200
+    # If DB errored and we're not in development, surface the DB unavailability
+    if db_error and APP_ENV != 'development':
+        return jsonify({'message': 'database unavailable'}), 503
+
     user = next((u for u in USERS if u['email'] == email), None)
     if not user or not check_password_hash(user['password_hash'], password):
         if os.environ.get('DEBUG_AUTH') == 'true':
@@ -676,11 +732,14 @@ def list_campaigns():
     user = get_user_from_auth()
     if not user:
         return jsonify([])
-    # Prefer DB-backed campaigns when available
+    # Prefer DB-backed campaigns when available. If DB is unavailable, in
+    # development fall back to in-memory campaigns; in production return 503.
     try:
         camps = db_get_campaigns_for_user(user['id'])
         return jsonify([{'id': c.id, 'uuid': getattr(c, 'uuid', None), 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code} for c in camps])
     except Exception:
+        if APP_ENV != 'development':
+            return jsonify({'message': 'database unavailable'}), 503
         member_ids = [m['campaign_id'] for m in MEMBERSHIPS if m['user_id'] == user['id']]
         return jsonify([c for c in CAMPAIGNS if c['id'] in member_ids])
 
@@ -695,12 +754,14 @@ def create_campaign():
     name = data.get('name')
     if not name:
         return jsonify({"message": "name required"}), 400
-    # Try DB persistence first
+    # Try DB persistence first. If DB is down, reject in production.
     try:
         c = db_create_campaign(name, user['id'])
         db_create_membership(c.id, user['id'], role='owner')
         return jsonify({'id': c.id, 'uuid': getattr(c, 'uuid', None), 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code}), 201
     except Exception:
+        if APP_ENV != 'development':
+            return jsonify({'message': 'database unavailable'}), 503
         camp = { 'id': NEXT_CAMPAIGN_ID, 'name': name, 'owner': user['id'], 'invite_code': f"INV-{NEXT_CAMPAIGN_ID:04d}" }
         NEXT_CAMPAIGN_ID += 1
         CAMPAIGNS.append(camp)
@@ -729,6 +790,8 @@ def join_or_create_test_campaign():
         db_create_membership(c.id, user['id'], role='player')
         return jsonify({'id': c.id, 'uuid': getattr(c, 'uuid', None), 'name': c.name, 'owner': c.owner, 'invite_code': c.invite_code})
     except Exception:
+        if APP_ENV != 'development':
+            return jsonify({'message': 'database unavailable'}), 503
         camp = next((c for c in CAMPAIGNS if c.get('name') == test_name), None)
         if not camp:
             camp = { 'id': NEXT_CAMPAIGN_ID, 'name': test_name, 'owner': user['id'], 'invite_code': f"TEST-{NEXT_CAMPAIGN_ID:04d}" }
@@ -1048,6 +1111,7 @@ def set_active_campaign():
     cid = data.get('campaign')
     # accept campaign id or name
     camp = None
+    db_error = False
     if isinstance(cid, int) or (isinstance(cid, str) and cid.isdigit()):
         # try DB first
         try:
@@ -1055,28 +1119,42 @@ def set_active_campaign():
             if db_c:
                 camp = {'id': db_c.id, 'name': db_c.name, 'owner': db_c.owner, 'invite_code': db_c.invite_code}
         except Exception:
-            camp = next((c for c in CAMPAIGNS if c['id'] == int(cid)), None)
+            db_error = True
+            camp = None
+            if APP_ENV == 'development':
+                camp = next((c for c in CAMPAIGNS if c['id'] == int(cid)), None)
     else:
         try:
             db_c = db_get_campaign_by_name(cid) if cid is not None else None
             if db_c:
                 camp = {'id': db_c.id, 'name': db_c.name, 'owner': db_c.owner, 'invite_code': db_c.invite_code}
         except Exception:
-            camp = next((c for c in CAMPAIGNS if c['name'] == cid), None)
+            db_error = True
+            camp = None
+            if APP_ENV == 'development':
+                camp = next((c for c in CAMPAIGNS if c['name'] == cid), None)
     if not camp and cid is not None:
         return jsonify({"message": "campaign not found"}), 404
     # If DB-backed user exists, return a refreshed token with claim; do not attempt to modify DB user object here
+    dbu = None
     try:
         dbu = db_get_user_by_id(user['id'])
     except Exception:
         dbu = None
+    # If DB lookup succeeded and returned a user, return a refreshed token
     if dbu:
         mirror = {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
         if camp:
             mirror['active_campaign'] = camp['name']
-    token = make_token(mirror)
-    return jsonify({'token': token, 'user': mirror}), 200
-    # in-memory user mirror
+        token = make_token(mirror)
+        return jsonify({'token': token, 'user': mirror}), 200
+
+    # DB did not provide a user. If the DB errored and we're in production,
+    # surface the failure so clients know the DB is unavailable.
+    if db_error and APP_ENV != 'development':
+        return jsonify({'message': 'database unavailable'}), 503
+
+    # Otherwise (development), update the in-memory user mirror and return
     u = next((u for u in USERS if u['id'] == user['id']), None)
     if u is not None:
         u['active_campaign'] = camp['id'] if camp else None
@@ -1108,8 +1186,10 @@ def get_my_character():
         finally:
             s.close()
     except Exception:
-        pass
-    # Fallback to in-memory mirror on user or global CHARACTERS
+        # If DB is unavailable, in production surface the error; in dev fall back
+        if APP_ENV != 'development':
+            return jsonify({'message': 'database unavailable'}), 503
+    # Fallback to in-memory mirror on user or global CHARACTERS (dev only)
     ch = user.get('character') or next((c for c in CHARACTERS if c.get('user_id') == user['id']), None)
     if ch:
         return jsonify(ch), 200
@@ -1183,6 +1263,9 @@ def set_my_character():
         finally:
             s.close()
     except Exception:
+        # In case of DB failure, only fall back to in-memory in development.
+        if APP_ENV != 'development':
+            return jsonify({'message': 'database unavailable'}), 503
         # fallback to in-memory
         existing = next((c for c in CHARACTERS if c.get('user_id') == user['id']), None)
         if existing:
