@@ -4,7 +4,7 @@ import client from '../api/client'
 import { useToast } from './ToastProvider'
 import parseJwt from '../lib/jwt'
 import { useAuth } from '../contexts/AuthContext'
-import { clearToken, setToken } from '../lib/token'
+import { clearToken, setToken, getToken } from '../lib/token'
 
 
 export default function Topbar() {
@@ -59,13 +59,13 @@ export default function Topbar() {
                 // persist by id to server
                 const res = await client.put('/users/me/active-campaign', {campaign: found.id})
                 if (res && res.token) {
-                  try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
+                  try { setToken(res.token) } catch(e){ try{ const t = typeof res.token === 'string' ? res.token : String(res.token); localStorage.setItem('token', t) }catch{} }
                 }
               } else {
                 // fallback: try persisting by name
                 const res = await client.put('/users/me/active-campaign', {campaign: selectedCampaign}).catch(()=>null)
                 if (res && res.token) {
-                  try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
+                  try { setToken(res.token) } catch(e){ try{ const t = typeof res.token === 'string' ? res.token : String(res.token); localStorage.setItem('token', t) }catch{} }
                 }
               }
             }

@@ -52,7 +52,7 @@ export default function AuthPage() {
                       try {
                         const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
                         const token = loginRes.data.token
-                        try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ try{ localStorage.setItem('token', typeof token === 'string' ? token : String(token)) }catch{} }
+                        try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ try{ const t = typeof token === 'string' ? token : String(token); localStorage.setItem('token', t) }catch{} }
                         window.location.href = '/dashboard'
                         return
                       } catch (loginErr) {
@@ -61,7 +61,7 @@ export default function AuthPage() {
                     }
                     const token = res?.data?.token
                     if (token) {
-                      try { setToken(token) } catch(e){ try{ localStorage.setItem('token', typeof token === 'string' ? token : String(token)) }catch{} }
+                      try { setToken(token) } catch(e){ try{ const t = typeof token === 'string' ? token : String(token); localStorage.setItem('token', t) }catch{} }
                       localStorage.setItem('dev_user_email', email)
                       window.location.href = '/dashboard'
                       return
@@ -89,7 +89,7 @@ export default function AuthPage() {
                     }
                     function b64(obj){ return btoa(JSON.stringify(obj)).replace(/=/g,'') }
                     const fakeToken = `${b64({alg:'none'})}.${b64(payload)}.signature`
-                    try { setToken(fakeToken) } catch(e){ try{ localStorage.setItem('token', fakeToken) }catch{} }
+                    try { setToken(fakeToken) } catch(e){ try{ const t = typeof fakeToken === 'string' ? fakeToken : String(fakeToken); localStorage.setItem('token', t) }catch{} }
                     window.location.href = '/dashboard'
                     return
                   }

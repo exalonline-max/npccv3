@@ -1,5 +1,6 @@
 import React from 'react'
 import client from '../api/client'
+import { getToken } from '../lib/token'
 
 export default function CampaignsModal({open, onClose}){
   const [name, setName] = React.useState('')
@@ -49,15 +50,22 @@ export default function CampaignsModal({open, onClose}){
     setLoading(true)
     setMsg(null)
     try{
-  const res = await client.post('/campaigns', {name})
+      const token = getToken()
+      let res = null
+      if (!token) {
+        // no auth token; cannot create on server. Persist locally as selected campaign name.
+        const campaignName = name
+        try { localStorage.setItem('activeCampaign', campaignName) } catch(e){}
+        window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}}))
+        setMsg('Created and selected (local): ' + campaignName)
+        return
+      } else {
+        res = await client.post('/campaigns', {name})
+      }
       // backend should return created campaign name or id
       const campaignName = res?.name || res?.id || name
-      try {
-        localStorage.setItem('activeCampaign', campaignName)
-        try { window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}})) } catch (evErr) { console.error('Failed dispatching campaign-changed', evErr) }
-      } catch (storageErr) {
-        console.error('Could not persist activeCampaign', storageErr)
-      }
+      try { localStorage.setItem('activeCampaign', campaignName) }catch(e){}
+      try { window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}})) } catch (evErr) { console.error('Failed dispatching campaign-changed', evErr) }
       setMsg('Created and selected: ' + campaignName)
     }catch(e){
       // Log full error for remote diagnostics; reformat thrown Error/text into an object
@@ -71,6 +79,15 @@ export default function CampaignsModal({open, onClose}){
     setLoading(true)
     setMsg(null)
     try{
+      const token = getToken()
+      if (!token) {
+        // cannot join server-side without auth; just persist the code as activeCampaign
+        try{ localStorage.setItem('activeCampaign', code) }catch(_){}
+        try{ window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: code}})) }catch(_){}
+        setMsg('Joined and selected (local): ' + code)
+        setLoading(false)
+        return
+      }
       const res = await client.post('/campaigns/join', {code})
       const campaignName = res?.name || res?.id || code
       try {
@@ -93,10 +110,20 @@ export default function CampaignsModal({open, onClose}){
     setLoading(true)
     setMsg(null)
     try{
+      const token = getToken()
+      if (!token) {
+        const campaignName = cid
+        try{ localStorage.setItem('activeCampaign', campaignName) }catch(_){}
+        try{ window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}})) }catch(_){}
+        setMsg('Joined and selected (local): ' + campaignName)
+        onClose && onClose()
+        setLoading(false)
+        return
+      }
       const res = await client.post(`/campaigns/${cid}/join`)
       const campaignName = res?.name || res?.id || cid
-      localStorage.setItem('activeCampaign', campaignName)
-      window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}}))
+      try{ localStorage.setItem('activeCampaign', campaignName) }catch(_){}
+      try{ window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}})) }catch(_){}
       setMsg('Joined and selected: ' + campaignName)
       onClose && onClose()
       try{ const list = await client.get('/campaigns/public'); if (Array.isArray(list)) setCampaigns(list) }catch(e){}
@@ -163,7 +190,13 @@ export default function CampaignsModal({open, onClose}){
                       <div className="text-xs text-muted">Code: {c.invite_code || '—'} • Owner: {c.owner || '—'}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button className="btn btn-xs" onClick={()=>{ localStorage.setItem('activeCampaign', c.name || String(c.id)); window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: c.name || String(c.id)}})); onClose && onClose(); }}>Select</button>
+                      <button className="btn btn-xs" onClick={()=>{ 
+                        const token = getToken()
+                        const campaignName = c.name || String(c.id)
+                        try{ localStorage.setItem('activeCampaign', campaignName) }catch(_){}
+                        try{ window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}})) }catch(_){}
+                        if (token) { try{ onClose && onClose(); }catch(_){} } else { onClose && onClose(); }
+                      }}>Select</button>
                       <button className="btn btn-xs btn-outline" onClick={()=>joinCampaignById(c.id)}>Join</button>
                     </div>
                   </div>
