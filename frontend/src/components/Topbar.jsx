@@ -46,22 +46,27 @@ export default function Topbar() {
     // persist server-side when possible and resolve campaign id
     if (selectedCampaign !== null) {
       (async ()=>{
-          try{
+            try{
             // fetch user's campaigns and find the id
-            const camps = await client.get('/campaigns')
-            const found = Array.isArray(camps) ? camps.find(c => c.name === selectedCampaign || String(c.id) === String(selectedCampaign)) : null
-            if (found) {
-              localStorage.setItem('activeCampaignId', String(found.id))
-              // persist by id to server
-              const res = await client.put('/users/me/active-campaign', {campaign: found.id})
-              if (res && res.token) {
-                try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
-              }
+            const token = getToken()
+            if (!token) {
+              console.debug('No auth token; skipping server persistence for active campaign')
             } else {
-              // fallback: try persisting by name
-              const res = await client.put('/users/me/active-campaign', {campaign: selectedCampaign}).catch(()=>null)
-              if (res && res.token) {
-                try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
+              const camps = await client.get('/campaigns')
+              const found = Array.isArray(camps) ? camps.find(c => c.name === selectedCampaign || String(c.id) === String(selectedCampaign)) : null
+              if (found) {
+                localStorage.setItem('activeCampaignId', String(found.id))
+                // persist by id to server
+                const res = await client.put('/users/me/active-campaign', {campaign: found.id})
+                if (res && res.token) {
+                  try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
+                }
+              } else {
+                // fallback: try persisting by name
+                const res = await client.put('/users/me/active-campaign', {campaign: selectedCampaign}).catch(()=>null)
+                if (res && res.token) {
+                  try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
+                }
               }
             }
           }catch(e){

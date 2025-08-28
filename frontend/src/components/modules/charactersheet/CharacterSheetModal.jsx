@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import client from '../../../api/client'
+import { getToken } from '../../../lib/token'
 
 // simple debounce helper
 function debounce(fn, wait){
@@ -137,16 +138,29 @@ export default function CharacterSheetModal({open, onClose}){
       // persist to server if possible, otherwise localStorage
       try{
         const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+        const token = getToken()
         if (active){
           const camps = await client.get('/campaigns')
           const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
-          if (found){
-            await client.post(`/campaigns/${found.id}/characters`, sheet)
+          if (!token) {
+            // No token available: fall back to localStorage-only save to avoid 401s
+            console.debug('No auth token; saving character locally')
+            localStorage.setItem('npcchatter:character', JSON.stringify(sheet))
+          } else {
+            if (found){
+              await client.post(`/campaigns/${found.id}/characters`, sheet)
+            } else {
+              await client.put('/users/me/character', sheet)
+            }
+          }
+        } else {
+          const token2 = getToken()
+          if (!token2) {
+            console.debug('No auth token; saving character locally')
+            localStorage.setItem('npcchatter:character', JSON.stringify(sheet))
           } else {
             await client.put('/users/me/character', sheet)
           }
-        } else {
-          await client.put('/users/me/character', sheet)
         }
       }catch(e){
         console.debug('Could not save character to server, falling back to localStorage', e)
