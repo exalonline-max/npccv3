@@ -63,6 +63,14 @@ async function req(path: string, opts: ReqOptions = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   })
   if (!res.ok) {
+    if (res.status === 503) {
+      // Backend signals service unavailable (DB down etc.). Throw a typed error
+      const text = await res.text().catch(()=>res.statusText)
+      const err = new Error(text || 'service unavailable')
+      // @ts-ignore add a discriminant for callers
+      err.name = 'ApiUnavailableError'
+      throw err
+    }
     // Try to produce a helpful error. If the server returned HTML it's
     // usually because the request hit the static frontend (rewrite to
     // index.html) or some proxy that doesn't allow the HTTP method.

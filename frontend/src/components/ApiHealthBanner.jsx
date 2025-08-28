@@ -9,8 +9,11 @@ export default function ApiHealthBanner(){
     async function check(){
       try{
         const base = API_BASE || '/api'
-        const res = await fetch(base + '/env', { method: 'GET' })
-        if (!res.ok) throw new Error('non-OK')
+        const res = await fetch(base + '/health', { method: 'GET' })
+        if (!res.ok) {
+          const errText = await res.text().catch(()=>res.statusText)
+          throw new Error(errText || `status=${res.status}`)
+        }
         const info = await res.json()
         if (!cancelled) setState({status: 'ok', info, error: null, dismissed: false})
       }catch(e){
@@ -18,13 +21,15 @@ export default function ApiHealthBanner(){
       }
     }
     check()
-    return ()=>{ cancelled = true }
+    // Poll every 15s while banner visible
+    const iv = setInterval(check, 15000)
+    return ()=>{ cancelled = true; clearInterval(iv) }
   }, [])
 
   if (state.dismissed) return null
   if (state.status === 'unknown') return null
 
-  const isBad = state.status === 'fail' || (state.info && state.info.app_env === 'production' && !state.info.allowed_origins)
+  const isBad = state.status === 'fail' || (state.info && state.info.database === false)
 
   if (!isBad) return null
 
