@@ -398,6 +398,30 @@ def ping_redis():
     url = os.environ.get('REDIS_URL') or os.environ.get('REDIS_URI')
     if not url:
         return jsonify({'ok': False, 'message': 'REDIS_URL not configured'}), 503
+
+
+    @app.route('/api/debug/token', methods=['GET'])
+    def debug_token():
+        """Debug-only endpoint: returns request headers and decoded JWT payload (no secrets).
+        Intended for short-term debugging in staging; remove before production use.
+        """
+        headers = {k: v for k, v in request.headers.items()}
+        token = None
+        try:
+            auth_header = request.headers.get('Authorization') or request.environ.get('HTTP_AUTHORIZATION')
+            if auth_header and auth_header.startswith('Bearer '):
+                token = auth_header.split(' ', 1)[1]
+            elif auth_header:
+                token = auth_header
+        except Exception:
+            token = None
+        payload = None
+        if token:
+            try:
+                payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+            except Exception as e:
+                payload = {'_decode_error': str(e)}
+        return jsonify({'headers': headers, 'token_payload': payload})
     try:
         r = redis.from_url(url, socket_timeout=5)
         if r.ping():
@@ -805,6 +829,13 @@ def create_character(cid):
     if not user:
         return jsonify({"message": "unauthorized"}), 401
     # simple membership check
+    try:
+        # Log membership state for debugging (no secrets). This helps explain 403s.
+        user_id = user.get('id') if isinstance(user, dict) else None
+        user_memberships = [m for m in MEMBERSHIPS if m.get('user_id') == user_id]
+        print(f"create_character: user_id={user_id} attempting to post to campaign={cid}, memberships={user_memberships}")
+    except Exception:
+        print('create_character: membership debug info unavailable')
     if not any(m for m in MEMBERSHIPS if m['campaign_id'] == cid and m['user_id'] == user['id']):
         return jsonify({"message": "forbidden"}), 403
     data = request.get_json() or {}
