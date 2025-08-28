@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.exc import OperationalError
 import json
+import time
 
 # Serve static frontend if built into ../frontend/dist
 STATIC_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
@@ -498,9 +499,14 @@ def register():
     if existing:
         return jsonify({"message": "email already exists"}), 400
     # create in DB
+    start_time = time.time()
+    pwd_hash_start = time.time()
     pwd_hash = generate_password_hash(password)
+    pwd_hash_end = time.time()
     try:
+        db_start = time.time()
         new_user = db_create_user(email, username, pwd_hash)
+        db_end = time.time()
         # add a simple in-memory mirror for older endpoints still using USERS
         mirror = {'id': new_user.id, 'email': new_user.email, 'username': new_user.username, 'password_hash': new_user.password_hash}
         # ensure NEXT_USER_ID stays ahead of DB ids for in-memory mirrors
@@ -512,9 +518,16 @@ def register():
             pass
         USERS.append(mirror)
         token = make_token(mirror)
+        total_end = time.time()
+        if os.environ.get('DEBUG_AUTH') == 'true':
+            try:
+                print(f"Auth timing (register): hash={pwd_hash_end-pwd_hash_start:.3f}s db={db_end-db_start:.3f}s total={total_end-start_time:.3f}s (db)")
+            except Exception:
+                pass
         return jsonify({"token": token}), 201
     except Exception:
         # fallback to in-memory creation if DB fails
+        db_fail_time = time.time()
         if any(u['email'] == email for u in USERS):
             return jsonify({"message": "email already exists"}), 400
         user = {
@@ -526,6 +539,12 @@ def register():
         NEXT_USER_ID += 1
         USERS.append(user)
         token = make_token(user)
+        total_end = time.time()
+        if os.environ.get('DEBUG_AUTH') == 'true':
+            try:
+                print(f"Auth timing (register): hash={pwd_hash_end-pwd_hash_start:.3f}s db_fail_delay={total_end-db_fail_time:.3f}s total={total_end-start_time:.3f}s (fallback)")
+            except Exception:
+                pass
         return jsonify({"token": token}), 201
 
 
@@ -537,24 +556,34 @@ def login():
     if not email or not password:
         return jsonify({"message": "email and password are required"}), 400
     # prefer DB lookup; if DB fails, fall back to in-memory USERS
+    lookup_start = time.time()
     try:
         dbu = db_get_user_by_email(email)
     except Exception:
         dbu = None
+    lookup_end = time.time()
     if dbu:
         # Optional debug logging for auth (do not enable in production logs unless safe)
         try:
             if os.environ.get('DEBUG_AUTH') == 'true':
-                print(f"Auth debug: found DB user id={getattr(dbu,'id',None)} email={getattr(dbu,'email',None)}")
+                print(f"Auth debug: found DB user id={getattr(dbu,'id',None)} email={getattr(dbu,'email',None)} lookup_time={lookup_end-lookup_start:.3f}s")
         except Exception:
             pass
-        if not check_password_hash(str(dbu.password_hash), password):
+        pw_start = time.time()
+        ok = check_password_hash(str(dbu.password_hash), password)
+        pw_end = time.time()
+        if not ok:
             if os.environ.get('DEBUG_AUTH') == 'true':
-                print('Auth debug: password check failed for DB user')
+                print(f'Auth debug: password check failed for DB user pw_time={pw_end-pw_start:.3f}s')
             return jsonify({"message": "invalid credentials"}), 401
         # create mirror token payload
         mirror = {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
         token = make_token(mirror)
+        if os.environ.get('DEBUG_AUTH') == 'true':
+            try:
+                print(f"Auth timing (login): lookup={lookup_end-lookup_start:.3f}s pw_check={pw_end-pw_start:.3f}s")
+            except Exception:
+                pass
         return jsonify({"token": token}), 200
     user = next((u for u in USERS if u['email'] == email), None)
     if not user or not check_password_hash(user['password_hash'], password):
@@ -563,6 +592,57 @@ def login():
         return jsonify({"message": "invalid credentials"}), 401
     token = make_token(user)
     return jsonify({"token": token}), 200
+
+
+# Dev-only helper endpoints: create and delete a dev user. These are only active
+# when APP_ENV == 'development' to avoid accidental use in production.
+@app.route('/api/_dev/create_user', methods=['POST'])
+def dev_create_user():
+    if APP_ENV != 'development':
+        return jsonify({'message': 'not found'}), 404
+    data = request.get_json() or {}
+    email = data.get('email')
+    username = data.get('username')
+    password = data.get('password')
+    if not email or not username or not password:
+        return jsonify({'message': 'email, username and password required'}), 400
+    # create user (reuse register logic)
+    try:
+        res = register()
+        return res
+    except Exception as e:
+        return jsonify({'message': 'error creating user', 'error': str(e)}), 500
+
+
+@app.route('/api/_dev/delete_user', methods=['DELETE'])
+def dev_delete_user():
+    if APP_ENV != 'development':
+        return jsonify({'message': 'not found'}), 404
+    data = request.get_json() or {}
+    email = data.get('email')
+    if not email:
+        return jsonify({'message': 'email required'}), 400
+    # Attempt to delete from DB if available
+    try:
+        dbu = db_get_user_by_email(email)
+        if dbu:
+            s = SessionLocal()
+            try:
+                s.delete(dbu)
+                s.commit()
+            finally:
+                s.close()
+            return jsonify({'ok': True}), 200
+    except Exception:
+        pass
+    # Fallback to in-memory USERS
+    global USERS
+    before = len(USERS)
+    USERS = [u for u in USERS if u.get('email') != email]
+    after = len(USERS)
+    if after < before:
+        return jsonify({'ok': True}), 200
+    return jsonify({'message': 'user not found'}), 404
 
 
 # ----- Campaigns & membership endpoints (dev in-memory) -----
