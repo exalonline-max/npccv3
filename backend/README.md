@@ -61,3 +61,21 @@ Quick publish / share options
       - The `ALLOWED_ORIGINS` env var in `render.yaml` is wired from the frontend service host so CORS will allow the SPA when both services are deployed together.
 
 
+   Running Alembic migrations in production
+   --------------------------------------
+
+   We include an Alembic migration file `alembic/versions/0002_add_uuid_columns.py` that adds `uuid` columns to a few tables and backfills existing rows. To run migrations safely in production:
+
+   1. Take a DB snapshot or pg_dump (provider console preferred).
+   2. Set your `DATABASE_URL` environment variable to point to the production DB.
+   3. From the repo root run:
+
+   ```bash
+   ./backend/scripts/run_migrations_prod.sh
+   ```
+
+   This script will activate `.venv` if present, ensure `alembic` is available, and run `alembic upgrade head` using `alembic.ini` in `backend/`.
+
+   If your users table is extremely large you may want to create the unique index concurrently (see migration notes) to avoid locking the table. Contact your infra team to schedule during low-traffic windows.
+
+
