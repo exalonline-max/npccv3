@@ -9,9 +9,9 @@ import ApiHealthBanner from './components/ApiHealthBanner'
 function sanitizeStoredToken() {
   try {
     if (typeof window === 'undefined') return
-    const t = localStorage.getItem('token')
-    if (!t) return
-    const parts = t.split('.')
+  const t = localStorage.getItem('token')
+  if (!t || typeof t !== 'string') return
+  const parts = t.split('.')
     if (parts.length !== 3) {
       console.warn('Clearing invalid token from localStorage (wrong JWT format)')
       localStorage.removeItem('token')

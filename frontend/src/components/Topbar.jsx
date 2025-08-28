@@ -2,29 +2,14 @@ import React from 'react'
 import CampaignsModal from './CampaignsModal'
 import client from '../api/client'
 import { useToast } from './ToastProvider'
+import parseJwt from '../lib/jwt'
 
-function parseJwt(token) {
-  try {
-    const base64Url = token.split('.')[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-        })
-        .join('')
-    )
-    return JSON.parse(jsonPayload)
-  } catch (e) {
-    return null
-  }
-}
 
 export default function Topbar() {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
   const payload = token ? parseJwt(token) : null
-  const email = payload?.email || payload?.sub || 'unknown@npcchatter.com'
+  const rawEmail = payload?.email ?? payload?.sub ?? 'unknown@npcchatter.com'
+  const email = typeof rawEmail === 'string' ? rawEmail : String(rawEmail)
   const username = payload?.username || payload?.name || payload?.preferred_username || ''
   const seed = encodeURIComponent(email)
   const avatarUrl = `https://api.dicebear.com/6.x/identicon/svg?seed=${seed}`
@@ -199,7 +184,7 @@ export default function Topbar() {
               {isSignedIn ? (
                 <div className="flex flex-col">
                   <span className="text-xs text-muted">Signed in as</span>
-                  <span className="text-sm font-semibold truncate mt-1">{username || email.split('@')[0]}</span>
+                  <span className="text-sm font-semibold truncate mt-1">{username || (typeof email === 'string' ? email.split('@')[0] : String(email))}</span>
                   <span className="text-xs text-muted truncate">{email}</span>
                 </div>
               ) : (
