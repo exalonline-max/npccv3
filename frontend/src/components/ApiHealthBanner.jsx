@@ -1,4 +1,5 @@
 import React from 'react'
+import { API_BASE } from '../api/client'
 
 export default function ApiHealthBanner(){
   const [state, setState] = React.useState({status: 'unknown', info: null, error: null, dismissed: false})
@@ -7,7 +8,7 @@ export default function ApiHealthBanner(){
     let cancelled = false
     async function check(){
       try{
-        const base = (await import('../api/client')).API_BASE || '/api'
+        const base = API_BASE || '/api'
         const res = await fetch(base + '/env', { method: 'GET' })
         if (!res.ok) throw new Error('non-OK')
         const info = await res.json()

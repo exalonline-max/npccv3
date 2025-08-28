@@ -1,4 +1,5 @@
 import React from 'react'
+import client from '../../api/client'
 
 const NAMES = [
   'Arin Brightwood',
@@ -19,8 +20,7 @@ export default function PartyFrames(){
       try{
         const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
         if (!active) return
-        const clientMod = await import('../../api/client')
-        const client = clientMod.default
+  // use static client import
         const camps = await client.get('/campaigns')
         const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
         if (found){

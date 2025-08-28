@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import client from '../../api/client'
 
 // Player-bottom bar: full-width fixed bar that aligns its inner content to the page <main>
 export default function PlayerBottomBar(){
@@ -33,8 +34,7 @@ export default function PlayerBottomBar(){
         const payload = token ? JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) : null
         const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
         if (!active) { setSheet(null); return }
-        const clientMod = await import('../../api/client')
-        const client = clientMod.default
+  // use static client import
         const camps = await client.get('/campaigns')
         const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
         if (found){
@@ -95,8 +95,7 @@ export default function PlayerBottomBar(){
           const payload = token ? JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) : null
           const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
           if (!active) { setSheet(null); return }
-          const clientMod = await import('../../api/client')
-          const client = clientMod.default
+          // use static client import
           const camps = await client.get('/campaigns')
           const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
           if (found){

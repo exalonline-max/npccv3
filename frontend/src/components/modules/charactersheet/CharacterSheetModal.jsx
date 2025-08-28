@@ -1,4 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react'
+import client from '../../../api/client'
+
+// simple debounce helper
+function debounce(fn, wait){
+  let t = null
+  return function(...args){
+    if (t) clearTimeout(t)
+    t = setTimeout(()=>{ t = null; fn.apply(this, args) }, wait)
+  }
+}
 
 const DEFAULT_ATTRIBUTES = { STR:10, DEX:10, CON:10, INT:10, WIS:10, CHA:10 }
 
@@ -126,8 +136,6 @@ export default function CharacterSheetModal({open, onClose}){
       }
       // persist to server if possible, otherwise localStorage
       try{
-        const clientMod = await import('../../../api/client')
-        const client = clientMod.default
         const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
         if (active){
           const camps = await client.get('/campaigns')
@@ -151,6 +159,17 @@ export default function CharacterSheetModal({open, onClose}){
       setRenderError('Failed to save character')
     }
   }
+
+  // debounced autosave: save to server/localStorage after user stops typing for 1s
+  const debouncedSaveRef = useRef(null)
+  useEffect(()=>{
+    // create debounced fn once
+    debouncedSaveRef.current = debounce(()=>{ save().catch(()=>{}) }, 1000)
+    return ()=>{ debouncedSaveRef.current = null }
+  }, [])
+
+  // trigger autosave on key pieces of state changes
+  useEffect(()=>{ if (!open) return; debouncedSaveRef.current && debouncedSaveRef.current() }, [name, race, className, level, maxHp, currentHp, tempHp, attributes, skills, skillVals, inventory, portrait, ac, initiative, speed, proficiencyBonus, languages, open])
 
   if (!open) return null
 

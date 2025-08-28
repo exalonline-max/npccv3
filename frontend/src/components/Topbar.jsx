@@ -1,5 +1,6 @@
 import React from 'react'
 import CampaignsModal from './CampaignsModal'
+import client from '../api/client'
 import { useToast } from './ToastProvider'
 
 function parseJwt(token) {
@@ -58,26 +59,24 @@ export default function Topbar() {
     // persist server-side when possible and resolve campaign id
     if (selectedCampaign !== null) {
       (async ()=>{
-        try{
-          const clientMod = await import('../api/client')
-          const client = clientMod.default
-          // fetch user's campaigns and find the id
-          const camps = await client.get('/campaigns')
-          const found = Array.isArray(camps) ? camps.find(c => c.name === selectedCampaign || String(c.id) === String(selectedCampaign)) : null
-          if (found) {
-            localStorage.setItem('activeCampaignId', String(found.id))
-            // persist by id to server
-            const res = await client.put('/users/me/active-campaign', {campaign: found.id})
-            if (res && res.token) localStorage.setItem('token', res.token)
-          } else {
-            // fallback: try persisting by name
-            const res = await client.put('/users/me/active-campaign', {campaign: selectedCampaign}).catch(()=>null)
-            if (res && res.token) localStorage.setItem('token', res.token)
+          try{
+            // fetch user's campaigns and find the id
+            const camps = await client.get('/campaigns')
+            const found = Array.isArray(camps) ? camps.find(c => c.name === selectedCampaign || String(c.id) === String(selectedCampaign)) : null
+            if (found) {
+              localStorage.setItem('activeCampaignId', String(found.id))
+              // persist by id to server
+              const res = await client.put('/users/me/active-campaign', {campaign: found.id})
+              if (res && res.token) localStorage.setItem('token', res.token)
+            } else {
+              // fallback: try persisting by name
+              const res = await client.put('/users/me/active-campaign', {campaign: selectedCampaign}).catch(()=>null)
+              if (res && res.token) localStorage.setItem('token', res.token)
+            }
+          }catch(e){
+            // ignore errors for now
           }
-        }catch(e){
-          // ignore errors for now
-        }
-      })()
+        })()
     }
   }, [selectedCampaign])
 
@@ -111,29 +110,36 @@ export default function Topbar() {
   }, [])
 
   // show toasts for connectivity changes and character updates
-  const toast = (() => { try { return useToast() } catch(e){ return null } })()
+  // Resolve addToast safely; fall back to a no-op so missing provider won't crash
+  const addToast = (() => {
+    try {
+      const t = useToast()
+      if (t && typeof t.addToast === 'function') return t.addToast
+      return () => {}
+    } catch (e) {
+      return () => {}
+    }
+  })()
+
   React.useEffect(()=>{
-    if (!toast) return
     // initial status
-    if (isOnline) toast.addToast({title: 'Connectivity', body: 'You are online', timeout: 2000})
-    else toast.addToast({title: 'Connectivity', body: 'You are offline', timeout: 0})
+    if (isOnline) addToast({title: 'Connectivity', body: 'You are online', timeout: 2000})
+    else addToast({title: 'Connectivity', body: 'You are offline', timeout: 0})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   React.useEffect(()=>{
-    if (!toast) return
-    if (isOnline) toast.addToast({title: 'Connectivity', body: 'Back online', timeout: 3000})
-    else toast.addToast({title: 'Connectivity', body: 'You are offline', timeout: 0})
-  }, [isOnline, toast])
+    if (isOnline) addToast({title: 'Connectivity', body: 'Back online', timeout: 3000})
+    else addToast({title: 'Connectivity', body: 'You are offline', timeout: 0})
+  }, [isOnline])
 
   React.useEffect(()=>{
     function onChar(e){
-      if (!toast) return
-      toast.addToast({title: 'Character', body: 'Character saved', timeout: 2500})
+      addToast({title: 'Character', body: 'Character saved', timeout: 2500})
     }
     window.addEventListener('npcchatter:character-updated', onChar)
     return ()=> window.removeEventListener('npcchatter:character-updated', onChar)
-  }, [toast])
+  }, [])
 
 
   function logout() {

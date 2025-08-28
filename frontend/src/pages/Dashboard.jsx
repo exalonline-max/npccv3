@@ -5,6 +5,7 @@ import PlayerBottomBar from '../components/bottombars/PlayerBottomBar'
 import LeftBubbles from '../components/LeftBubbles'
 import TranslatorModal from '../components/modules/translator/TranslatorModal'
 import CharacterSheetModal from '../components/modules/charactersheet/CharacterSheetModal'
+import client from '../api/client'
 
 export default function Dashboard() {
   const [openTranslator, setOpenTranslator] = useState(false)
@@ -30,7 +31,6 @@ export default function Dashboard() {
           <div className="mt-4">
             <button className="btn btn-sm" onClick={async ()=>{
               try{
-                const client = (await import('../api/client')).default
                 const camp = await client.post('/campaigns/test/join')
                 const campaignName = camp?.name || camp?.id
                 if (campaignName) {

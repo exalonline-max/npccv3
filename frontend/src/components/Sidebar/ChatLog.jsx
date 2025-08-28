@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { nextId } from '../../lib/uid'
+import client from '../../api/client'
 
 const initial = [
   {id:1, author:'DM', type:'alert', text:'You hear distant thunder...'},
@@ -75,8 +76,6 @@ export default function ChatLog(){
       // try to fetch recent messages for the campaign if backend supports it
       if (campaign && typeof window !== 'undefined'){
         try{
-          const clientMod = await import('../../api/client')
-          const client = clientMod.default
           const data = await client.get('/campaigns/' + encodeURIComponent(campaign) + '/messages')
           if (Array.isArray(data)){
             setMsgs(prev => [...prev, ...data.map(m=>({
@@ -182,8 +181,6 @@ export default function ChatLog(){
     if (activeId) {
       (async ()=>{
         try{
-          const clientMod = await import('../../api/client')
-          const client = clientMod.default
           const res = await client.post('/campaigns/' + encodeURIComponent(activeId) + '/messages', {text: body})
           // append server response if available
           if (res && res.id) {

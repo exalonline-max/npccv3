@@ -6,7 +6,13 @@ import { Navigate } from 'react-router-dom'
 import ToastProvider, { useToast } from './components/ToastProvider'
 
 function AppInner(){
-  const { addToast } = useToast()
+  // Guard against missing ToastProvider (defensive). If useToast throws or
+  // returns null, provide a no-op addToast so socket callbacks won't crash.
+  let addToast: any = () => {}
+  try{
+    const t: any = useToast()
+    if (t && typeof t.addToast === 'function') addToast = t.addToast
+  }catch(e){ /* missing provider - continue with noop */ }
   useEffect(()=>{
     // ensure socket is connected and listen for remote character updates
     import('./api/socket').then(s => {
@@ -17,7 +23,7 @@ function AppInner(){
           try{
             const title = payload && payload.character ? `${payload.character.name || 'Character'} updated` : 'Character updated'
             const body = payload && payload.user_id ? `Player ${payload.user_id} updated their character` : ''
-            (addToast as any)({title, body, timeout: 4000})
+            try{ addToast({title, body, timeout: 4000}) }catch(e){}
             // dispatch global event so UI components refresh
             window.dispatchEvent(new CustomEvent('npcchatter:character-updated', {detail: payload.character || payload}))
           }catch(e){ }
