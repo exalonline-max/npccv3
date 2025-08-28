@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { nextId } from '../../lib/uid'
 import client from '../../api/client'
 import parseJwt from '../../lib/jwt'
+import { getToken } from '../../lib/token'
 
 const initial = [
   {id:1, author:'DM', type:'alert', text:'You hear distant thunder...'},
@@ -10,7 +11,7 @@ const initial = [
 
 
 export default function ChatLog(){
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const token = getToken()
   const payload = token ? parseJwt(token) : null
   const speaks = payload?.speaks || []
 

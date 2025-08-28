@@ -52,11 +52,15 @@ export default function Topbar() {
               localStorage.setItem('activeCampaignId', String(found.id))
               // persist by id to server
               const res = await client.put('/users/me/active-campaign', {campaign: found.id})
-              if (res && res.token) localStorage.setItem('token', res.token)
+              if (res && res.token) {
+                try { const { setToken } = await import('../lib/token'); setToken(res.token) } catch(e){ localStorage.setItem('token', res.token) }
+              }
             } else {
               // fallback: try persisting by name
               const res = await client.put('/users/me/active-campaign', {campaign: selectedCampaign}).catch(()=>null)
-              if (res && res.token) localStorage.setItem('token', res.token)
+              if (res && res.token) {
+                try { const { setToken } = await import('../lib/token'); setToken(res.token) } catch(e){ localStorage.setItem('token', res.token) }
+              }
             }
           }catch(e){
             // ignore errors for now

@@ -51,7 +51,7 @@ export default function AuthPage() {
                       try {
                         const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
                         const token = loginRes.data.token
-                        localStorage.setItem('token', token)
+                        try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
                         window.location.href = '/dashboard'
                         return
                       } catch (loginErr) {
@@ -60,7 +60,7 @@ export default function AuthPage() {
                     }
                     const token = res?.data?.token
                     if (token) {
-                      localStorage.setItem('token', token)
+                      try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
                       localStorage.setItem('dev_user_email', email)
                       window.location.href = '/dashboard'
                       return
@@ -70,7 +70,7 @@ export default function AuthPage() {
                     try {
                       const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
                       const token = loginRes.data.token
-                      localStorage.setItem('token', token)
+                      try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
                       window.location.href = '/dashboard'
                       return
                     } catch (e) {
@@ -95,7 +95,7 @@ export default function AuthPage() {
                     }
                     function b64(obj){ return btoa(JSON.stringify(obj)).replace(/=/g,'') }
                     const fakeToken = `${b64({alg:'none'})}.${b64(payload)}.signature`
-                    localStorage.setItem('token', fakeToken)
+                    try { const { setToken } = await import('../lib/token'); setToken(fakeToken) } catch(e){ localStorage.setItem('token', fakeToken) }
                     window.location.href = '/dashboard'
                     return
                   }

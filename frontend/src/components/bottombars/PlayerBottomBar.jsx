@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 import client from '../../api/client'
+import { getToken } from '../../lib/token'
 
 // Player-bottom bar: full-width fixed bar that aligns its inner content to the page <main>
 export default function PlayerBottomBar(){
   // Don't render the bottom bar unless the user has an active campaign
   let hasActive = false
   try{
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const token = getToken()
   const payload = token ? require('../../lib/jwt').default(token) : null
   if (payload && (payload.activeCampaign || payload['active-campaign'])) hasActive = true
     if (!hasActive){

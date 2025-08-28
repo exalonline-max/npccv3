@@ -44,9 +44,11 @@ type ReqOptions = {
 
 async function req(path: string, opts: ReqOptions = {}) {
   const headers: Record<string,string> = { 'Content-Type': 'application/json' }
-  // Attach auth token if available
+  // Attach auth token if available (normalized)
   try {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    // lazy import to avoid circular deps in some test harnesses
+    const { getToken } = await import('../lib/token')
+    const token = getToken()
     if (token) headers['Authorization'] = `Bearer ${token}`
   } catch (e) {}
   // Attach active campaign header when present in localStorage
