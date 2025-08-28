@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import client from '../../api/client'
+import { useAuth } from '../../contexts/AuthContext'
 
 export default function RegisterForm() {
   const [email, setEmail] = useState('')
@@ -7,14 +8,17 @@ export default function RegisterForm() {
   const [confirm, setConfirm] = useState('')
   const [username, setUsername] = useState('')
 
+  const auth = useAuth()
+
   async function submit(e) {
     e.preventDefault()
     if (password !== confirm) return alert('Passwords do not match')
     try {
-      const res = await client.post('/auth/register', { email, password, username })
-      const token = res?.token || (res && res.token) || null
-      try { const { setToken } = await import('../../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
-      window.location.href = '/dashboard'
+  const res = await client.post('/auth/register', { email, password, username })
+  const token = res?.token || (res && res.token) || null
+  const user = res?.user || null
+  auth.setAuth(token, user)
+  window.location.href = '/dashboard'
     } catch (err) {
       alert(err.message || JSON.stringify(err))
     }

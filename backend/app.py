@@ -547,7 +547,8 @@ def register():
                 print(f"Auth timing (register): hash={pwd_hash_end-pwd_hash_start:.3f}s db={db_end-db_start:.3f}s total={total_end-start_time:.3f}s (db)")
             except Exception:
                 pass
-        return jsonify({"token": token}), 201
+    # return token and user object for immediate client usage
+    return jsonify({"token": token, "user": mirror}), 201
     except Exception:
         # fallback to in-memory creation if DB fails
         db_fail_time = time.time()
@@ -568,7 +569,7 @@ def register():
                 print(f"Auth timing (register): hash={pwd_hash_end-pwd_hash_start:.3f}s db_fail_delay={total_end-db_fail_time:.3f}s total={total_end-start_time:.3f}s (fallback)")
             except Exception:
                 pass
-        return jsonify({"token": token}), 201
+        return jsonify({"token": token, "user": user}), 201
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -607,14 +608,15 @@ def login():
                 print(f"Auth timing (login): lookup={lookup_end-lookup_start:.3f}s pw_check={pw_end-pw_start:.3f}s")
             except Exception:
                 pass
-        return jsonify({"token": token}), 200
+        # return token and user object so client can display user fields immediately
+        return jsonify({"token": token, "user": mirror}), 200
     user = next((u for u in USERS if u['email'] == email), None)
     if not user or not check_password_hash(user['password_hash'], password):
         if os.environ.get('DEBUG_AUTH') == 'true':
             print(f"Auth debug: in-memory user lookup for {email} returned {bool(user)} and password_check={user and check_password_hash(user['password_hash'], password)}")
         return jsonify({"message": "invalid credentials"}), 401
     token = make_token(user)
-    return jsonify({"token": token}), 200
+    return jsonify({"token": token, "user": user}), 200
 
 
 # Dev-only helper endpoints: create and delete a dev user. These are only active
@@ -1072,8 +1074,8 @@ def set_active_campaign():
         mirror = {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
         if camp:
             mirror['active_campaign'] = camp['name']
-        token = make_token(mirror)
-        return jsonify({'token': token}), 200
+    token = make_token(mirror)
+    return jsonify({'token': token, 'user': mirror}), 200
     # in-memory user mirror
     u = next((u for u in USERS if u['id'] == user['id']), None)
     if u is not None:
@@ -1082,7 +1084,7 @@ def set_active_campaign():
     if camp:
         mirror['active_campaign'] = camp['name']
     token = make_token(mirror)
-    return jsonify({'token': token}), 200
+    return jsonify({'token': token, 'user': mirror}), 200
 
 
 @app.route('/api/users/me/character', methods=['GET'])

@@ -1,17 +1,20 @@
 import React, { useState } from 'react'
 import client from '../../api/client'
+import { useAuth } from '../../contexts/AuthContext'
 
 export default function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const auth = useAuth()
 
   async function submit(e) {
     e.preventDefault()
     try {
-      const res = await client.post('/auth/login', { email, password })
-      const token = res?.token || (res && res.token) || null
-      try { const { setToken } = await import('../../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
-      window.location.href = '/dashboard'
+  const res = await client.post('/auth/login', { email, password })
+  const token = res?.token || (res && res.token) || null
+  const user = res?.user || null
+  auth.setAuth(token, user)
+  window.location.href = '/dashboard'
     } catch (err) {
       alert(err.message || JSON.stringify(err))
     }

@@ -3,14 +3,15 @@ import CampaignsModal from './CampaignsModal'
 import client from '../api/client'
 import { useToast } from './ToastProvider'
 import parseJwt from '../lib/jwt'
+import { useAuth } from '../contexts/AuthContext'
 
 
 export default function Topbar() {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const { user, token } = useAuth()
   const payload = token ? parseJwt(token) : null
-  const rawEmail = payload?.email ?? payload?.sub ?? 'unknown@npcchatter.com'
+  const rawEmail = user?.email ?? payload?.email ?? payload?.sub ?? 'unknown@npcchatter.com'
   const email = typeof rawEmail === 'string' ? rawEmail : String(rawEmail)
-  const username = payload?.username || payload?.name || payload?.preferred_username || ''
+  const username = user?.username || payload?.username || payload?.name || payload?.preferred_username || ''
   const seed = encodeURIComponent(email)
   const avatarUrl = `https://api.dicebear.com/6.x/identicon/svg?seed=${seed}`
 

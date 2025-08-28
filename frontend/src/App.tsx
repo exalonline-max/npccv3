@@ -4,6 +4,7 @@ import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
 import { Navigate } from 'react-router-dom'
 import ToastProvider, { useToast } from './components/ToastProvider'
+import AuthProvider from './contexts/AuthContext'
 
 function AppInner(){
   // Guard against missing ToastProvider (defensive). If useToast throws or
@@ -45,7 +46,9 @@ function AppInner(){
 export default function App(){
   return (
     <ToastProvider>
-      <AppInner />
+      <AuthProvider>
+        <AppInner />
+      </AuthProvider>
     </ToastProvider>
   )
 }
