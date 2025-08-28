@@ -52,11 +52,18 @@ export default function CampaignsModal({open, onClose}){
   const res = await client.post('/campaigns', {name})
       // backend should return created campaign name or id
       const campaignName = res?.name || res?.id || name
-      localStorage.setItem('activeCampaign', campaignName)
-      window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}}))
+      try {
+        localStorage.setItem('activeCampaign', campaignName)
+        try { window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}})) } catch (evErr) { console.error('Failed dispatching campaign-changed', evErr) }
+      } catch (storageErr) {
+        console.error('Could not persist activeCampaign', storageErr)
+      }
       setMsg('Created and selected: ' + campaignName)
     }catch(e){
-      setMsg(e.message)
+      // Log full error for remote diagnostics; reformat thrown Error/text into an object
+      try { console.error('joinCampaign error', e) } catch(_){}
+      const emsg = e && e.message ? e.message : (typeof e === 'string' ? e : JSON.stringify(e))
+      setMsg(emsg)
     }finally{setLoading(false)}
   }
 
@@ -66,13 +73,19 @@ export default function CampaignsModal({open, onClose}){
     try{
       const res = await client.post('/campaigns/join', {code})
       const campaignName = res?.name || res?.id || code
-      localStorage.setItem('activeCampaign', campaignName)
-      window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}}))
+      try {
+        localStorage.setItem('activeCampaign', campaignName)
+        try { window.dispatchEvent(new CustomEvent('npcchatter:campaign-changed', {detail:{campaign: campaignName}})) } catch (evErr) { console.error('Failed dispatching campaign-changed', evErr) }
+      } catch (storageErr) {
+        console.error('Could not persist activeCampaign', storageErr)
+      }
       setMsg('Joined and selected: ' + campaignName)
       // refresh list
       try{ const list = await client.get('/campaigns/public'); if (Array.isArray(list)) setCampaigns(list) }catch(e){}
     }catch(e){
-      setMsg(e.message)
+      try { console.error('joinCampaignById error', e) } catch(_){}
+      const emsg = e && e.message ? e.message : (typeof e === 'string' ? e : JSON.stringify(e))
+      setMsg(emsg)
     }finally{setLoading(false)}
   }
 
