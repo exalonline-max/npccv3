@@ -6,6 +6,19 @@ export function normalizeRaw(raw: any): string | null {
   if (typeof raw === 'string') {
     const s = raw.trim()
     if (!s) return null
+    // If a JSON string was accidentally stored (e.g. the full response
+    // object), attempt to parse and extract the token or access_token field.
+    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(s)
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.token && typeof parsed.token === 'string') return parsed.token
+          if (parsed.access_token && typeof parsed.access_token === 'string') return parsed.access_token
+        }
+      } catch (e) {
+        // fall through to normal behavior
+      }
+    }
     // strip optional Bearer prefix
     if (s.toLowerCase().startsWith('bearer ')) return s.slice(7).trim()
     return s
