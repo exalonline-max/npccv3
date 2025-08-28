@@ -285,8 +285,9 @@ class Message(Base):
 # create tables if missing
 try:
     Base.metadata.create_all(bind=engine)
-except OperationalError:
-    print('Warning: could not create DB tables at startup')
+except Exception as e:
+    # Log exception to console for visibility in container/platform logs.
+    print('Warning: could not create DB tables at startup:', str(e))
 
 # Lightweight DB helpers (used in endpoints below)
 def db_get_user_by_email(email):
@@ -488,8 +489,12 @@ def register():
     if not email or not password or not username:
         return jsonify({"message": "email, username and password are required"}), 400
     # check duplicate
-    # prefer DB-backed users if available
-    existing = db_get_user_by_email(email)
+    # prefer DB-backed users if available. If the DB is unavailable, fall
+    # back to the in-memory store instead of raising a 500.
+    try:
+        existing = db_get_user_by_email(email)
+    except Exception:
+        existing = None
     if existing:
         return jsonify({"message": "email already exists"}), 400
     # create in DB
@@ -531,8 +536,11 @@ def login():
     password = data.get('password')
     if not email or not password:
         return jsonify({"message": "email and password are required"}), 400
-    # prefer DB lookup
-    dbu = db_get_user_by_email(email)
+    # prefer DB lookup; if DB fails, fall back to in-memory USERS
+    try:
+        dbu = db_get_user_by_email(email)
+    except Exception:
+        dbu = None
     if dbu:
         if not check_password_hash(str(dbu.password_hash), password):
             return jsonify({"message": "invalid credentials"}), 401
