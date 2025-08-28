@@ -90,12 +90,13 @@ export default function ChatLog(){
             }))])
           }
 
-          // join socket room using activeCampaignId if available
-          const activeId = typeof window !== 'undefined' ? localStorage.getItem('activeCampaignId') : null
-          if (socketRef.current && activeId) {
-            socketRef.current.emit('leave', {campaign: socketRef.current.__joinedCampaign})
-            socketRef.current.emit('join', {campaign: activeId})
-            socketRef.current.__joinedCampaign = activeId
+          // join socket room using campaignId
+          if (socketRef.current && campaignId) {
+            try{
+              socketRef.current.emit('leave', {campaign: socketRef.current.__joinedCampaign})
+              socketRef.current.emit('join', {campaign: campaignId})
+              socketRef.current.__joinedCampaign = campaignId
+            }catch(e){/* ignore socket errors */}
           }
         }catch(err){
           // ignore fetch errors - backend may not expose this endpoint yet
