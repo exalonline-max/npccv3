@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import axios from 'axios'
 import { API_BASE } from '../api/client'
+import { setToken } from '../lib/token'
 import LoginForm from '../components/auth/LoginForm'
 import RegisterForm from '../components/auth/RegisterForm'
 
@@ -41,7 +42,7 @@ export default function AuthPage() {
 
                   // Create new dev user via backend dev endpoint when running locally (dev only).
                   let res
-                  if (import.meta.env && import.meta.env.DEV) {
+                      if (import.meta.env && import.meta.env.DEV) {
                     try {
                       res = await axios.post(API_BASE + '/_dev/create_user', { email, username, password })
                     } catch (e) {
@@ -51,7 +52,7 @@ export default function AuthPage() {
                       try {
                         const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
                         const token = loginRes.data.token
-                        try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
+                        try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ try{ localStorage.setItem('token', typeof token === 'string' ? token : String(token)) }catch{} }
                         window.location.href = '/dashboard'
                         return
                       } catch (loginErr) {
@@ -60,7 +61,7 @@ export default function AuthPage() {
                     }
                     const token = res?.data?.token
                     if (token) {
-                      try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
+                      try { setToken(token) } catch(e){ try{ localStorage.setItem('token', typeof token === 'string' ? token : String(token)) }catch{} }
                       localStorage.setItem('dev_user_email', email)
                       window.location.href = '/dashboard'
                       return
@@ -88,7 +89,7 @@ export default function AuthPage() {
                     }
                     function b64(obj){ return btoa(JSON.stringify(obj)).replace(/=/g,'') }
                     const fakeToken = `${b64({alg:'none'})}.${b64(payload)}.signature`
-                    try { const { setToken } = await import('../lib/token'); setToken(fakeToken) } catch(e){ localStorage.setItem('token', fakeToken) }
+                    try { setToken(fakeToken) } catch(e){ try{ localStorage.setItem('token', fakeToken) }catch{} }
                     window.location.href = '/dashboard'
                     return
                   }

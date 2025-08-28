@@ -4,6 +4,7 @@ import client from '../api/client'
 import { useToast } from './ToastProvider'
 import parseJwt from '../lib/jwt'
 import { useAuth } from '../contexts/AuthContext'
+import { clearToken, setToken } from '../lib/token'
 
 
 export default function Topbar() {
@@ -54,13 +55,13 @@ export default function Topbar() {
               // persist by id to server
               const res = await client.put('/users/me/active-campaign', {campaign: found.id})
               if (res && res.token) {
-                try { const { setToken } = await import('../lib/token'); setToken(res.token) } catch(e){ localStorage.setItem('token', res.token) }
+                try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
               }
             } else {
               // fallback: try persisting by name
               const res = await client.put('/users/me/active-campaign', {campaign: selectedCampaign}).catch(()=>null)
               if (res && res.token) {
-                try { const { setToken } = await import('../lib/token'); setToken(res.token) } catch(e){ localStorage.setItem('token', res.token) }
+                try { setToken(res.token) } catch(e){ try{ localStorage.setItem('token', typeof res.token === 'string' ? res.token : String(res.token)) }catch{} }
               }
             }
           }catch(e){
@@ -133,7 +134,7 @@ export default function Topbar() {
 
 
   function logout() {
-    localStorage.removeItem('token')
+  try { clearToken() } catch(e) { try{ localStorage.removeItem('token') }catch{} }
     window.location.href = '/'
   }
 
