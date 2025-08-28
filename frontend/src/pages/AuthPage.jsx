@@ -39,29 +39,45 @@ export default function AuthPage() {
                     }
                   }
 
-                  // Create new dev user via backend dev endpoint when available
+                  // Create new dev user via backend dev endpoint when running locally (dev only).
                   let res
-                  try {
-                    res = await axios.post(API_BASE + '/_dev/create_user', { email, username, password })
-                  } catch (e) {
-                    // If backend create fails with 404 (endpoint not available in prod), fall back to normal login attempt
-                    if (e.response && e.response.status === 404) {
-                      // try to login as a known dev user (legacy)
+                  if (import.meta.env && import.meta.env.DEV) {
+                    try {
+                      res = await axios.post(API_BASE + '/_dev/create_user', { email, username, password })
+                    } catch (e) {
+                      // If backend create fails with 404/405 (endpoint not present or unsupported), fall back to legacy dev login
+                      // eslint-disable-next-line no-console
+                      console.debug('Dev create failed; falling back to legacy dev login', e?.response?.status, e?.response?.data || e.message)
+                      try {
+                        const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
+                        const token = loginRes.data.token
+                        localStorage.setItem('token', token)
+                        window.location.href = '/dashboard'
+                        return
+                      } catch (loginErr) {
+                        throw e
+                      }
+                    }
+                    const token = res?.data?.token
+                    if (token) {
+                      localStorage.setItem('token', token)
+                      localStorage.setItem('dev_user_email', email)
+                      window.location.href = '/dashboard'
+                      return
+                    }
+                  } else {
+                    // In production/staging don't call dev endpoints on the backend (static frontend may respond with 405).
+                    try {
                       const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
                       const token = loginRes.data.token
                       localStorage.setItem('token', token)
                       window.location.href = '/dashboard'
                       return
+                    } catch (e) {
+                      const msg = e.response ? `Dev endpoints unavailable in production and legacy dev login failed: ${e.response.status}` : `Dev endpoints unavailable in production: ${e.message}`
+                      alert(msg)
+                      return
                     }
-                    throw e
-                  }
-
-                  const token = res.data.token
-                  if (token) {
-                    localStorage.setItem('token', token)
-                    localStorage.setItem('dev_user_email', email)
-                    window.location.href = '/dashboard'
-                    return
                   }
                 } catch (err) {
                   const status = err.response?.status
