@@ -15,16 +15,60 @@ export default function AuthPage() {
             <button onClick={()=>setMode('login')} className={`btn ${mode==='login'? 'btn-active btn-primary':'btn-ghost'}`}>Login</button>
             <button onClick={()=>setMode('register')} className={`${mode==='register'? 'btn-active btn-success':'btn-ghost'} btn`}>Register</button>
             <button onClick={async ()=>{
-                // Temporary dev-login button for testing. Create a fake unsigned token ONLY in Vite dev mode.
+                // Dev button: create a fresh random dev user (development only).
+                // Flow:
+                // 1) generate random creds
+                // 2) if a previous dev user email is stored in localStorage, try to delete it
+                // 3) call backend /api/_dev/create_user to register new dev user
+                // 4) store returned token and record dev_user_email in localStorage
+                // Falls back to the offline fake-token only when network unreachable AND running Vite dev server.
+                const rand = Math.random().toString(36).slice(2, 10)
+                const email = `dev+${rand}@npcchatter.local`
+                const username = `Dev${rand}`
+                const password = `pw-${rand}`
+                const prev = localStorage.getItem('dev_user_email')
                 try {
-                  const res = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
+                  // If previous dev user recorded, attempt to delete it (best-effort)
+                  if (prev && import.meta.env && import.meta.env.DEV) {
+                    try {
+                      await axios.delete(API_BASE + '/_dev/delete_user', { data: { email: prev } })
+                    } catch (e) {
+                      // non-fatal
+                      // eslint-disable-next-line no-console
+                      console.debug('Could not delete previous dev user', prev, e?.response?.data || e.message)
+                    }
+                  }
+
+                  // Create new dev user via backend dev endpoint when available
+                  let res
+                  try {
+                    res = await axios.post(API_BASE + '/_dev/create_user', { email, username, password })
+                  } catch (e) {
+                    // If backend create fails with 404 (endpoint not available in prod), fall back to normal login attempt
+                    if (e.response && e.response.status === 404) {
+                      // try to login as a known dev user (legacy)
+                      const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
+                      const token = loginRes.data.token
+                      localStorage.setItem('token', token)
+                      window.location.href = '/dashboard'
+                      return
+                    }
+                    throw e
+                  }
+
                   const token = res.data.token
-                  localStorage.setItem('token', token)
-                  window.location.href = '/dashboard'
+                  if (token) {
+                    localStorage.setItem('token', token)
+                    localStorage.setItem('dev_user_email', email)
+                    window.location.href = '/dashboard'
+                    return
+                  }
                 } catch (err) {
+                  const status = err.response?.status
+                  const data = err.response?.data
+                  // eslint-disable-next-line no-console
+                  console.error('Dev create/login failed', { status, data, message: err.message })
                   const isNetwork = !err.response
-                  // Only use the offline fake token when running in dev mode. This prevents unsigned tokens
-                  // from being stored in production builds which the backend will reject with 401.
                   if (isNetwork && import.meta.env && import.meta.env.DEV) {
                     const payload = {
                       email: 'dev@npcchatter.com',
@@ -37,9 +81,10 @@ export default function AuthPage() {
                     const fakeToken = `${b64({alg:'none'})}.${b64(payload)}.signature`
                     localStorage.setItem('token', fakeToken)
                     window.location.href = '/dashboard'
-                  } else {
-                    alert(err.response?.data?.message || err.message)
+                    return
                   }
+                  const msg = status ? `Dev action failed (status=${status}): ${data?.message || JSON.stringify(data)}` : `Dev action failed: ${err.message}`
+                  alert(msg)
                 }
               }} className="btn btn-warning">Dev</button>
             <span className="text-xs text-muted ml-2 self-center" title="Dev-only: creates a local fake token when backend is unreachable">(dev only)</span>
