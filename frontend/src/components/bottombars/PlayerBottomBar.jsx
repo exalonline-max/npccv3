@@ -23,9 +23,42 @@ export default function PlayerBottomBar(){
   const [mainLeft, setMainLeft] = useState(null)
   const [mainWidth, setMainWidth] = useState(null)
   const alignRef = useRef(null)
+  const [sheet, setSheet] = useState(null)
 
   // keep the inner panel aligned to the main element (so the bar lines up with page content)
   useEffect(()=>{
+    async function loadSheet(){
+      try{
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+        const payload = token ? JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) : null
+        const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+        if (!active) { setSheet(null); return }
+        const clientMod = await import('../../api/client')
+        const client = clientMod.default
+        const camps = await client.get('/campaigns')
+        const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
+        if (found){
+          const chars = await client.get(`/campaigns/${found.id}/characters`)
+          const myChar = Array.isArray(chars) ? chars.find(ch=> String(ch.user_id) === String(payload?.sub)) : null
+          if (myChar) {
+            setSheet(myChar)
+            return
+          }
+        }
+        // fallback to localStorage saved sheet (offline or server failed to return one)
+        try{
+          const raw = localStorage.getItem('npcchatter:character')
+          if (raw){
+            const local = JSON.parse(raw)
+            setSheet(local)
+            return
+          }
+        }catch(e){}
+      }catch(e){
+        // ignore load errors
+      }
+    }
+
     function recomputeMain(){
       const main = document.querySelector('main')
       if (main){
@@ -38,6 +71,7 @@ export default function PlayerBottomBar(){
       }
     }
     recomputeMain()
+    loadSheet()
     let ro = null
     if (window.ResizeObserver){
       ro = new ResizeObserver(()=> recomputeMain())
@@ -48,6 +82,65 @@ export default function PlayerBottomBar(){
     return ()=>{
       window.removeEventListener('resize', recomputeMain)
       if (ro) ro.disconnect()
+    }
+  },[])
+
+  // reload sheet when character updated or campaign changes
+  useEffect(()=>{
+    function onUpdate(){
+      // reuse the same load logic by triggering recompute side-effect (quick load)
+      (async ()=>{
+        try{
+          const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+          const payload = token ? JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) : null
+          const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+          if (!active) { setSheet(null); return }
+          const clientMod = await import('../../api/client')
+          const client = clientMod.default
+          const camps = await client.get('/campaigns')
+          const found = Array.isArray(camps) ? camps.find(c => c.name === active || String(c.id) === String(active)) : null
+          if (found){
+            const chars = await client.get(`/campaigns/${found.id}/characters`)
+            const myChar = Array.isArray(chars) ? chars.find(ch=> String(ch.user_id) === String(payload?.sub)) : null
+            if (myChar) { setSheet(myChar); return }
+          }
+          // fallback to local saved sheet
+          try{
+            const raw = localStorage.getItem('npcchatter:character')
+            if (raw){ setSheet(JSON.parse(raw)); return }
+          }catch(e){}
+        }catch(e){ }
+      })()
+    }
+    function onCampaign(){ onUpdate() }
+    window.addEventListener('npcchatter:character-updated', onUpdate)
+    window.addEventListener('npcchatter:campaign-changed', onCampaign)
+    // socket listener
+    let offSocket = null
+    import('../../api/socket').then(s => {
+      try{
+        offSocket = s.onCharacterUpdated((payload)=>{
+          try{
+            const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
+            if (!payload) return
+            const pid = payload.campaign_id
+            const pUser = payload.user_id
+            const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+            let me = null
+            if (token){ try{ me = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) }catch(e){} }
+            if (pid && (String(pid) === String(active) || String(pid) === String(me?.['active-campaign']) || String(pid) === String(me?.activeCampaign))){
+              onUpdate()
+            } else if (pUser && String(pUser) === String(me?.sub || me?.sub)){
+              onUpdate()
+            }
+          }catch(e){}
+        })
+      }catch(e){}
+    }).catch(()=>{})
+    return ()=>{
+      window.removeEventListener('npcchatter:character-updated', onUpdate)
+      window.removeEventListener('npcchatter:campaign-changed', onCampaign)
+      try{ offSocket && offSocket() }catch(e){}
     }
   },[])
 
@@ -65,8 +158,8 @@ export default function PlayerBottomBar(){
 
       <div className="bg-base-100 border-t p-2 h-auto min-h-24 flex items-stretch">
         <div ref={alignRef} className="px-2 flex-1 overflow-hidden" style={mainLeft ? {position:'absolute', left: mainLeft, width: mainWidth} : {width: '100%'}}>
-          <div className="h-full overflow-hidden rounded-md border bg-base-200/20 p-2 text-[10px]">
-            {activeTab === 'Character' && <CharacterTab />}
+            <div className="h-full overflow-hidden rounded-md border bg-base-200/20 p-2 text-[10px]">
+            {activeTab === 'Character' && <CharacterTab sheet={sheet} />}
             {activeTab === 'Actions' && <ActionsTab />}
             {activeTab === 'Inventory' && <InventoryTab />}
           </div>
@@ -76,7 +169,7 @@ export default function PlayerBottomBar(){
   )
 }
 
-function CharacterTab(){
+function CharacterTab({sheet}){
   const skills = [
     'Acrobatics','Animal Handling','Arcana','Athletics','Deception','History',
     'Insight','Intimidation','Investigation','Medicine','Nature','Perception',
@@ -86,6 +179,9 @@ function CharacterTab(){
   const abilities = [
     ['STR',10],['DEX',18],['CON',14],['INT',12],['WIS',13],['CHA',8]
   ];
+
+  // if a saved sheet is present, prefer its attributes
+  const attrEntries = sheet && sheet.attributes ? Object.entries(sheet.attributes) : abilities
 
   function abilityMod(score){ return Math.floor((score - 10) / 2) }
   const profBonus = 3
@@ -106,18 +202,24 @@ function CharacterTab(){
     window.dispatchEvent(new CustomEvent('npcchatter:roll', {detail: {label, d20, modifier, total, author: 'You'}}))
   }
 
+  const getAttr = (key)=>{
+    // search attrEntries for key (allow lowercase/uppercase)
+    const found = attrEntries.find(a => String(a[0]).toLowerCase() === String(key).toLowerCase())
+    return found ? Number(found[1]) : 10
+  }
+
   return (
     <div className="h-full flex items-stretch gap-3">
       {/* Attributes - 20% */}
       <div className="w-[20%]">
         <div className="grid grid-cols-3 grid-rows-2 gap-1">
-          {abilities.map(([abbr, val]) => {
-            const mod = abilityMod(val)
+              {attrEntries.map(([abbr, val]) => {
+            const mod = abilityMod(Number(val))
             const modLabel = (mod>=0? `+${mod}` : `${mod}`)
             return (
               <button key={abbr} onClick={()=>doRoll(`${abbr} check`, mod)} className="px-2 py-1 rounded border bg-base-200/40 text-[10px] leading-none text-center">
                 <div className="opacity-70">{abbr}</div>
-                <div className="font-semibold">{val} <span className="opacity-70">({modLabel})</span></div>
+                <div className="font-semibold">{getAttr(abbr)} <span className="opacity-70">({modLabel})</span></div>
               </button>
             )
           })}
@@ -140,9 +242,9 @@ function CharacterTab(){
       <div className="w-[20%] flex-shrink-0 rounded border bg-base-200/10 p-1">
         <div className="opacity-70 text-[10px] px-1">Saving Throws</div>
         <div className="mt-1 grid grid-cols-3 gap-1">
-          {['Str','Dex','Con','Int','Wis','Cha'].map(s => {
+            {['Str','Dex','Con','Int','Wis','Cha'].map(s => {
             const abil = s.toUpperCase()
-            const abilScore = abilities.find(a=>a[0]===abil)[1]
+            const abilScore = getAttr(abil)
             const base = abilityMod(abilScore)
             const proficient = saveProfs.has(s)
             const total = base + (proficient ? profBonus : 0)

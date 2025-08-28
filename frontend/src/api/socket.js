@@ -10,6 +10,14 @@ export function connectSocket(){
   return socket
 }
 
+export function onCharacterUpdated(cb){
+  const s = connectSocket()
+  s.on('character_updated', (payload) => {
+    try{ cb && cb(payload) }catch(e){}
+  })
+  return () => s.off('character_updated')
+}
+
 export function disconnectSocket(){
   if (!socket) return
   socket.disconnect()

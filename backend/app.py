@@ -840,6 +840,12 @@ def create_character(cid):
                     NEXT_CHARACTER_ID = max(NEXT_CHARACTER_ID, int(cid_val) + 1)
             except Exception:
                 pass
+            # emit socket event so other clients in the campaign can refresh
+            try:
+                room = f'campaign_{c.campaign_id}'
+                socketio.emit('character_updated', {'campaign_id': c.campaign_id, 'user_id': c.user_id, 'character_id': c.id, 'character': res}, room)
+            except Exception:
+                pass
             return jsonify(res), 201
         finally:
             s.close()
@@ -856,6 +862,11 @@ def create_character(cid):
         }
         NEXT_CHARACTER_ID += 1
         CHARACTERS.append(char)
+        try:
+            room = f'campaign_{cid}'
+            socketio.emit('character_updated', {'campaign_id': cid, 'user_id': user['id'], 'character_id': char.get('id'), 'character': char}, room)
+        except Exception:
+            pass
         return jsonify(char), 201
 
 
@@ -990,6 +1001,12 @@ def set_my_character():
                 blob = {}
             if isinstance(blob, dict):
                 res.update(blob)
+            # emit socket event for campaign room if campaign_id present
+            try:
+                room = f'campaign_{res.get("campaign_id")}'
+                socketio.emit('character_updated', {'campaign_id': res.get('campaign_id'), 'user_id': res.get('user_id'), 'character_id': res.get('id'), 'character': res}, room)
+            except Exception:
+                pass
             # mirror into in-memory list for demo compatibility
             existing_mem = next((c for c in CHARACTERS if c.get('id') == res['id']), None)
             if not existing_mem:
@@ -1008,11 +1025,21 @@ def set_my_character():
             existing['skills'] = skills
             existing['skillScores'] = skillScores
             existing['inventory'] = inventory
+            try:
+                room = f'campaign_{existing.get("campaign_id")}'
+                socketio.emit('character_updated', {'campaign_id': existing.get('campaign_id'), 'user_id': existing.get('user_id'), 'character_id': existing.get('id'), 'character': existing}, room)
+            except Exception:
+                pass
             return jsonify(existing), 200
         global NEXT_CHARACTER_ID
         ch = {'id': NEXT_CHARACTER_ID, 'campaign_id': data.get('campaign_id'), 'user_id': user['id'], 'name': name or '', 'maxHp': maxHp, 'portrait': portrait or '', 'attributes': attributes, 'skills': skills, 'skillScores': skillScores, 'inventory': inventory}
         NEXT_CHARACTER_ID += 1
         CHARACTERS.append(ch)
+        try:
+            room = f'campaign_{ch.get("campaign_id")}'
+            socketio.emit('character_updated', {'campaign_id': ch.get('campaign_id'), 'user_id': ch.get('user_id'), 'character_id': ch.get('id'), 'character': ch}, room)
+        except Exception:
+            pass
         return jsonify(ch), 201
 
 

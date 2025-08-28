@@ -167,7 +167,7 @@ export default function Topbar() {
   }, [userMenuOpen])
 
   return (
-    <div className="navbar bg-base-100 shadow fixed top-0 left-0 right-0 z-40 h-16">
+    <div className="navbar bg-base-100 shadow fixed top-0 left-0 right-0 h-16" style={{ zIndex: 9999 }}>
       <div className="flex-1 px-4 items-center flex">
       <img src={logoSrc} alt="NPC Chatter" className="w-10 h-10 rounded-full mr-3 border" onError={(e)=>{ if (logoSrc !== logoSvg) { setLogoSrc(logoSvg) } else { e.target.style.display='none' } }} />
             <span className="text-xl font-bold mr-3">{selectedCampaign || 'Campaign Name'}</span>
