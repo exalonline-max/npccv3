@@ -66,18 +66,11 @@ export default function AuthPage() {
                       return
                     }
                   } else {
-                    // In production/staging don't call dev endpoints on the backend (static frontend may respond with 405).
-                    try {
-                      const loginRes = await axios.post(API_BASE + '/auth/login', { email: 'dev@npcchatter.com', password: 'password' })
-                      const token = loginRes.data.token
-                      try { const { setToken } = await import('../lib/token'); setToken(token) } catch(e){ localStorage.setItem('token', token) }
-                      window.location.href = '/dashboard'
-                      return
-                    } catch (e) {
-                      const msg = e.response ? `Dev endpoints unavailable in production and legacy dev login failed: ${e.response.status}` : `Dev endpoints unavailable in production: ${e.message}`
-                      alert(msg)
-                      return
-                    }
+                    // In production/staging don't call dev endpoints or attempt legacy dev login.
+                    // The Dev button is intentionally disabled outside of Vite's dev mode to avoid
+                    // creating or deleting test accounts on production environments.
+                    alert('Dev shortcut is disabled in production. Run the frontend with Vite (npm run dev) to use the Dev button, or sign in with a real account.')
+                    return
                   }
                 } catch (err) {
                   const status = err.response?.status
