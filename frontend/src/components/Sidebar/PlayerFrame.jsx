@@ -1,23 +1,6 @@
 import React from 'react'
 import client from '../../api/client'
-
-function parseJwt(token) {
-  try {
-    const base64Url = token.split('.')[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-        })
-        .join('')
-    )
-    return JSON.parse(jsonPayload)
-  } catch (e) {
-    return null
-  }
-}
+import parseJwt from '../../lib/jwt'
 
 const NAMES = [
   'Thorin Oakenshield',
@@ -38,7 +21,7 @@ function pickName(seed) {
 
 export default function PlayerFrame(){
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-  const payload = token ? parseJwt(token) : null
+  const payload = parseJwt(token)
   const [sheet, setSheet] = React.useState(null)
   // stable seed based on the token payload; memoize so Date.now() isn't called each render
   const seed = React.useMemo(() => payload?.email || payload?.sub || String(Date.now()), [payload])

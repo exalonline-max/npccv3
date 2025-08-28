@@ -6,13 +6,9 @@ export default function PlayerBottomBar(){
   // Don't render the bottom bar unless the user has an active campaign
   let hasActive = false
   try{
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-    if (token){
-      try{
-        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
-        if (payload && (payload.activeCampaign || payload['active-campaign'])) hasActive = true
-      }catch(e){}
-    }
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const payload = token ? require('../../lib/jwt').default(token) : null
+  if (payload && (payload.activeCampaign || payload['active-campaign'])) hasActive = true
     if (!hasActive){
       const stored = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
       if (stored) hasActive = true
@@ -30,8 +26,8 @@ export default function PlayerBottomBar(){
   useEffect(()=>{
     async function loadSheet(){
       try{
-        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-        const payload = token ? JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) : null
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const payload = token ? require('../../lib/jwt').default(token) : null
         const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
         if (!active) { setSheet(null); return }
   // use static client import
@@ -92,7 +88,7 @@ export default function PlayerBottomBar(){
       (async ()=>{
         try{
           const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-          const payload = token ? JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) : null
+          const payload = token ? require('../../lib/jwt').default(token) : null
           const active = typeof window !== 'undefined' ? localStorage.getItem('activeCampaign') : null
           if (!active) { setSheet(null); return }
           // use static client import
@@ -126,7 +122,7 @@ export default function PlayerBottomBar(){
             const pUser = payload.user_id
             const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
             let me = null
-            if (token){ try{ me = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))) }catch(e){} }
+            if (token){ try{ me = require('../../lib/jwt').default(token) }catch(e){} }
             if (pid && (String(pid) === String(active) || String(pid) === String(me?.['active-campaign']) || String(pid) === String(me?.activeCampaign))){
               onUpdate()
             } else if (pUser && String(pUser) === String(me?.sub || me?.sub)){

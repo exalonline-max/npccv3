@@ -12,7 +12,7 @@ export default function Sidebar(){
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
     if (token){
       try{
-        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+        const payload = require('../../lib/jwt').default(token)
         if (payload && (payload.activeCampaign || payload['active-campaign'])) hasActive = true
       }catch(e){}
     }

@@ -1,29 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { nextId } from '../../lib/uid'
 import client from '../../api/client'
+import parseJwt from '../../lib/jwt'
 
 const initial = [
   {id:1, author:'DM', type:'alert', text:'You hear distant thunder...'},
   {id:2, author:'Arin', type:'msg', text:'I ready my action.'},
 ]
 
-function parseJwt(token) {
-  try {
-    const base64Url = token.split('.')[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(function(c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-        })
-        .join('')
-    )
-    return JSON.parse(jsonPayload)
-  } catch (e) {
-    return null
-  }
-}
 
 export default function ChatLog(){
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
