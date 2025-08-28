@@ -542,7 +542,15 @@ def login():
     except Exception:
         dbu = None
     if dbu:
+        # Optional debug logging for auth (do not enable in production logs unless safe)
+        try:
+            if os.environ.get('DEBUG_AUTH') == 'true':
+                print(f"Auth debug: found DB user id={getattr(dbu,'id',None)} email={getattr(dbu,'email',None)}")
+        except Exception:
+            pass
         if not check_password_hash(str(dbu.password_hash), password):
+            if os.environ.get('DEBUG_AUTH') == 'true':
+                print('Auth debug: password check failed for DB user')
             return jsonify({"message": "invalid credentials"}), 401
         # create mirror token payload
         mirror = {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
@@ -550,6 +558,8 @@ def login():
         return jsonify({"token": token}), 200
     user = next((u for u in USERS if u['email'] == email), None)
     if not user or not check_password_hash(user['password_hash'], password):
+        if os.environ.get('DEBUG_AUTH') == 'true':
+            print(f"Auth debug: in-memory user lookup for {email} returned {bool(user)} and password_check={user and check_password_hash(user['password_hash'], password)}")
         return jsonify({"message": "invalid credentials"}), 401
     token = make_token(user)
     return jsonify({"token": token}), 200
