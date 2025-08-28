@@ -6,6 +6,7 @@ export default function CharacterSheetModal({open, onClose}){
   const [renderError, setRenderError] = useState(null)
   const [tab, setTab] = useState('sheet')
   const ref = useRef(null)
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
 
   // sheet state
   const [name, setName] = useState('')
@@ -25,6 +26,15 @@ export default function CharacterSheetModal({open, onClose}){
     window.addEventListener('keydown', onKey)
     return ()=> window.removeEventListener('keydown', onKey)
   }, [open, onClose])
+
+  useEffect(()=>{
+    if (typeof window === 'undefined') return
+    function onOnline(){ setIsOnline(true) }
+    function onOffline(){ setIsOnline(false) }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return ()=>{ window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline) }
+  }, [])
 
   // outside click to close
   useEffect(()=>{
@@ -142,6 +152,10 @@ export default function CharacterSheetModal({open, onClose}){
           </div>
 
           {renderError && <div className="mb-2 text-sm text-error">{renderError}</div>}
+
+          {!isOnline && (
+            <div className="mb-2 p-2 bg-yellow-800 text-yellow-50 rounded">You are offline — changes will be saved locally and synced when back online.</div>
+          )}
 
           <div className="max-h-[60vh] overflow-auto p-2">
             {tab === 'sheet' && (
@@ -277,7 +291,7 @@ export default function CharacterSheetModal({open, onClose}){
 
           <div className="flex justify-end space-x-2 mt-4">
             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={save}>Save</button>
+            <button className="btn btn-primary" onClick={save} disabled={!isOnline} title={!isOnline? 'Disabled while offline' : ''}>{isOnline ? 'Save' : 'Save (offline disabled)'}</button>
           </div>
         </div>
       </div>

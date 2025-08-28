@@ -1,5 +1,6 @@
 import React from 'react'
 import CampaignsModal from './CampaignsModal'
+import { useToast } from './ToastProvider'
 
 function parseJwt(token) {
   try {
@@ -23,6 +24,7 @@ export default function Topbar() {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
   const payload = token ? parseJwt(token) : null
   const email = payload?.email || payload?.sub || 'unknown@npcchatter.com'
+  const username = payload?.username || payload?.name || payload?.preferred_username || ''
   const seed = encodeURIComponent(email)
   const avatarUrl = `https://api.dicebear.com/6.x/identicon/svg?seed=${seed}`
 
@@ -94,6 +96,45 @@ export default function Topbar() {
   const logoSvg = '/circle-griff.svg'
   const [logoSrc, setLogoSrc] = React.useState(logoPng)
 
+  const [isOnline, setIsOnline] = React.useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    function goOnline() { setIsOnline(true) }
+    function goOffline() { setIsOnline(false) }
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
+
+  // show toasts for connectivity changes and character updates
+  const toast = (() => { try { return useToast() } catch(e){ return null } })()
+  React.useEffect(()=>{
+    if (!toast) return
+    // initial status
+    if (isOnline) toast.addToast({title: 'Connectivity', body: 'You are online', timeout: 2000})
+    else toast.addToast({title: 'Connectivity', body: 'You are offline', timeout: 0})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  React.useEffect(()=>{
+    if (!toast) return
+    if (isOnline) toast.addToast({title: 'Connectivity', body: 'Back online', timeout: 3000})
+    else toast.addToast({title: 'Connectivity', body: 'You are offline', timeout: 0})
+  }, [isOnline, toast])
+
+  React.useEffect(()=>{
+    function onChar(e){
+      if (!toast) return
+      toast.addToast({title: 'Character', body: 'Character saved', timeout: 2500})
+    }
+    window.addEventListener('npcchatter:character-updated', onChar)
+    return ()=> window.removeEventListener('npcchatter:character-updated', onChar)
+  }, [toast])
+
 
   function logout() {
     localStorage.removeItem('token')
@@ -103,6 +144,8 @@ export default function Topbar() {
   const [campaignModalOpen, setCampaignModalOpen] = React.useState(false)
   const [userMenuOpen, setUserMenuOpen] = React.useState(false)
   const userMenuRef = React.useRef(null)
+
+  const isSignedIn = Boolean(token && payload && (payload.email || payload.sub || payload.username))
 
   // close menu on outside click or Escape
   React.useEffect(()=>{
@@ -126,9 +169,13 @@ export default function Topbar() {
   return (
     <div className="navbar bg-base-100 shadow fixed top-0 left-0 right-0 z-40 h-16">
       <div className="flex-1 px-4 items-center flex">
-  <img src={logoSrc} alt="NPC Chatter" className="w-10 h-10 rounded-full mr-3 border" onError={(e)=>{ if (logoSrc !== logoSvg) { setLogoSrc(logoSvg) } else { e.target.style.display='none' } }} />
-        <span className="text-xl font-bold">{selectedCampaign || 'Campaign Name'}</span>
-      </div>
+      <img src={logoSrc} alt="NPC Chatter" className="w-10 h-10 rounded-full mr-3 border" onError={(e)=>{ if (logoSrc !== logoSvg) { setLogoSrc(logoSvg) } else { e.target.style.display='none' } }} />
+            <span className="text-xl font-bold mr-3">{selectedCampaign || 'Campaign Name'}</span>
+            <div className="flex items-center" title={isOnline ? 'Online' : 'Offline'} aria-live="polite">
+              <span className={`w-3 h-3 rounded-full border ${isOnline ? 'bg-green-500' : 'bg-gray-400'}`} />
+              <span className="ml-2 text-xs text-muted">{isOnline ? 'Online' : 'Offline'}</span>
+            </div>
+          </div>
 
       
 
@@ -141,7 +188,25 @@ export default function Topbar() {
               <img src={avatarUrl} alt="avatar" />
             </div>
           </label>
-          <ul tabIndex={0} className="mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-56">
+          <ul tabIndex={0} className="mt-3 p-2 shadow menu menu-compact dropdown-content bg-base-100 rounded-box w-64">
+            <li className="px-2 py-2">
+              {isSignedIn ? (
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted">Signed in as</span>
+                  <span className="text-sm font-semibold truncate mt-1">{username || email.split('@')[0]}</span>
+                  <span className="text-xs text-muted truncate">{email}</span>
+                </div>
+              ) : (
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted">Not signed in</span>
+                  <div className="flex space-x-2 mt-2">
+                    <button className="btn btn-sm btn-primary" onClick={()=>{ window.location.href = '/'; }}>Sign in</button>
+                    <button className="btn btn-sm" onClick={()=>{ window.location.href = '/register'; }}>Register</button>
+                  </div>
+                </div>
+              )}
+            </li>
+            <li className="divider" />
             <li className="px-2 py-2">
               <button className="w-full text-left cursor-pointer" onClick={()=>{ setCampaignModalOpen(true); setUserMenuOpen(false); }}>
                 <div className="flex flex-col">
