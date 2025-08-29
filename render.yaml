@@ -22,8 +22,7 @@ services:
       - key: JWT_SECRET
         value: ""
 
-  - type: web
-    runtime: static
+  - type: static
     name: npcchatter-frontend
     rootDir: frontend
     buildCommand: npm ci && npm run build
