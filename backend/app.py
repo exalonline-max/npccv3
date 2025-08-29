@@ -1,3 +1,32 @@
+import os
+from . import create_app
+from .config import APP_ENV, REDIS_URL, JWT_SECRET, DATABASE_URL
+from .db import init_db
+from .extensions import socketio
+
+STATIC_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
+
+def main():
+    app = create_app(static_folder=STATIC_FOLDER)
+    # Safe startup debug: print only presence of env vars
+    print(f"startup env presence: APP_ENV={APP_ENV}, DATABASE_URL_set={bool(DATABASE_URL)}, REDIS_url_set={bool(REDIS_URL)}, JWT_SECRET_set={bool(JWT_SECRET)}")
+    # Initialize DB
+    try:
+        init_db()
+    except Exception:
+        pass
+    # Init socketio with message queue if present
+    if REDIS_URL:
+        socketio.init_app(app, cors_allowed_origins="*", message_queue=REDIS_URL)
+    else:
+        socketio.init_app(app, cors_allowed_origins="*")
+    return app
+
+
+if __name__ == '__main__':
+    app = main()
+    # In production, socketio.run will be used by deployment (gunicorn + eventlet recommended)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, join_room, leave_room, emit
@@ -496,6 +525,40 @@ def debug_inspect():
         'auth_header_present': bool(request.headers.get('Authorization')),
         'matches': matches,
     })
+
+
+# Decode an incoming Authorization token and return the decoded payload or
+# a short error message. This endpoint is gated and should only be enabled
+# for debugging (set DEBUG_AUTH=true) or in non-production environments.
+@app.route('/api/_debug/decode-token', methods=['GET'])
+def debug_decode_token():
+    enabled = (os.environ.get('DEBUG_AUTH', '').lower() == 'true') or (APP_ENV != 'production')
+    if not enabled:
+        # hide existence in production unless explicitly enabled
+        return jsonify({'message': 'not found'}), 404
+    headers = {k: v for k, v in request.headers.items()}
+    token = None
+    try:
+        auth_header = request.headers.get('Authorization') or request.environ.get('HTTP_AUTHORIZATION')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ', 1)[1]
+        elif auth_header:
+            token = auth_header
+    except Exception:
+        token = None
+    payload = None
+    error = None
+    if token:
+        try:
+            # verify signature using configured JWT_SECRET; this will raise
+            # if token is invalid for any reason and we return the error text
+            payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        except Exception as e:
+            # Return the exception string but avoid including secrets
+            error = str(e)
+    else:
+        error = 'no token provided'
+    return jsonify({'ok': error is None, 'token_payload': payload, 'error': error, 'headers_present': bool(headers)}), 200 if error is None else 400
 
 
 # Temporary, gated endpoint to help confirm that multiple running instances
