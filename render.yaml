@@ -12,7 +12,7 @@ services:
         value: production
       - key: ALLOWED_ORIGINS
         fromService:
-          type: web
+          type: static
           name: npcchatter-frontend
           property: host
       - key: DATABASE_URL
