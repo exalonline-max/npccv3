@@ -1,34 +1,42 @@
+# render.yaml
 services:
+  # --- Backend (Flask) ---
   - type: web
+    runtime: python            # 'runtime' is preferred over deprecated 'env'
     name: npcchatter-backend
-    env: python
-    rootDir: backend
-  buildCommand: pip install -r requirements.txt
-  startCommand: gunicorn -k eventlet -w 1 backend.app:app -b 0.0.0.0:$PORT
-  plan: free
-    autoDeploy: true
+    rootDir: backend           # monorepo: build only from /backend
+    plan: free
+    autoDeployTrigger: commit  # replaces deprecated autoDeploy
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k eventlet -w 1 app:app -b 0.0.0.0:$PORT
+    # ^ because rootDir is 'backend', the module path is 'app:app' (not 'backend.app:app')
     envVars:
       - key: APP_ENV
         value: production
+      # Prefer explicit allowed origins (public URLs). 'fromService.property: host' is private-only.
+      # Add your Render onrender.com frontend URL after first deploy if needed.
       - key: ALLOWED_ORIGINS
-        fromService:
-          type: static
-          name: npcchatter-frontend
-          property: host
+        value: |
+          https://npcchatter.com,
+          https://www.npcchatter.com
+      # Secrets: let Render prompt you on initial create, or set via dashboard later.
       - key: DATABASE_URL
-        value: ""
+        sync: false
       - key: REDIS_URL
-        value: ""
+        sync: false
       - key: JWT_SECRET
-        value: ""
+        sync: false
 
-  - type: static
+  # --- Frontend (Static Site) ---
+  - type: web
+    runtime: static            # static sites are 'type: web' with 'runtime: static'
     name: npcchatter-frontend
     rootDir: frontend
+    plan: free
+    previews:
+      generation: automatic     # replaces deprecated pullRequestPreviewsEnabled
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
-    pullRequestPreviewsEnabled: true
-    autoDeploy: true
     routes:
       - type: rewrite
         source: '/*'
@@ -37,8 +45,8 @@ services:
       - www.npcchatter.com
       - npcchatter.com
     envVars:
+      # You cannot reference a public URL from backend via fromService.
+      # Put the public API base here (use your custom domain or the backend's onrender URL).
       - key: VITE_API_BASE
-        fromService:
-          type: web
-          name: npcchatter-backend
-          property: host
+        value: https://npcchatter-backend.onrender.com
+        # After the backend deploys the first time, you can replace this with your custom API domain if you set one.
