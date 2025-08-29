@@ -2,24 +2,20 @@
 services:
   # --- Backend (Flask) ---
   - type: web
-    runtime: python            # 'runtime' is preferred over deprecated 'env'
+    runtime: python
     name: npcchatter-backend
-    rootDir: backend           # monorepo: build only from /backend
-    plan: free
-    autoDeployTrigger: commit  # replaces deprecated autoDeploy
+    rootDir: backend
+    autoDeployTrigger: commit
     buildCommand: pip install -r requirements.txt
+    # If your Flask app object is `app` in backend/app.py, this is correct:
     startCommand: gunicorn -k eventlet -w 1 app:app -b 0.0.0.0:$PORT
-    # ^ because rootDir is 'backend', the module path is 'app:app' (not 'backend.app:app')
     envVars:
       - key: APP_ENV
         value: production
-      # Prefer explicit allowed origins (public URLs). 'fromService.property: host' is private-only.
-      # Add your Render onrender.com frontend URL after first deploy if needed.
       - key: ALLOWED_ORIGINS
         value: |
           https://npcchatter.com,
           https://www.npcchatter.com
-      # Secrets: let Render prompt you on initial create, or set via dashboard later.
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
@@ -29,24 +25,20 @@ services:
 
   # --- Frontend (Static Site) ---
   - type: web
-    runtime: static            # static sites are 'type: web' with 'runtime: static'
+    runtime: static
     name: npcchatter-frontend
     rootDir: frontend
-    plan: free
+    autoDeployTrigger: commit
     previews:
-      generation: automatic     # replaces deprecated pullRequestPreviewsEnabled
+      generation: automatic
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     routes:
       - type: rewrite
         source: '/*'
         destination: '/index.html'
-    domains:
-      - www.npcchatter.com
-      - npcchatter.com
+    # NOTE: domains removed to avoid "already taken" blueprint error.
     envVars:
-      # You cannot reference a public URL from backend via fromService.
-      # Put the public API base here (use your custom domain or the backend's onrender URL).
       - key: VITE_API_BASE
+        # Use the backend's public URL. Replace after first deploy if needed.
         value: https://npcchatter-backend.onrender.com
-        # After the backend deploys the first time, you can replace this with your custom API domain if you set one.
