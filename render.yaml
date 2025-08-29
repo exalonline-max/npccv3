@@ -11,8 +11,10 @@ services:
     autoDeployTrigger: commit
     # Install the backend requirements file which lives under backend/
     buildCommand: pip install -r backend/requirements.txt
-    # Use the top-level WSGI entrypoint `app:app` (app.py at repo root).
-    startCommand: gunicorn -k eventlet -w 1 app:app -b 0.0.0.0:$PORT
+  # Start the monolithic backend module so legacy routes implemented in
+  # `backend/app.py` (e.g. /api/campaigns/test/join, /api/users/me/active-campaign)
+  # remain available to the frontend.
+  startCommand: gunicorn -k eventlet -w 1 backend.app:app -b 0.0.0.0:$PORT
     envVars:
       - key: APP_ENV
         value: production
