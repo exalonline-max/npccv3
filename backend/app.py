@@ -131,6 +131,18 @@ NEXT_MESSAGE_ID = 1
 
 # Minimal JWT secret for local development; in production provide via env var
 JWT_SECRET = os.environ.get('JWT_SECRET', 'devsecret')
+# Optional comma-separated list of accepted JWT secrets. This lets us accept tokens
+# signed with previous secret(s) during a rotation window. If not set, defaults
+# to the single `JWT_SECRET` value.
+raw_secrets = os.environ.get('JWT_SECRETS')
+if raw_secrets:
+    JWT_SECRETS = [s.strip() for s in raw_secrets.split(',') if s.strip()]
+else:
+    JWT_SECRETS = [JWT_SECRET]
+
+# Dangerous fallback: when true, allow decoding tokens without verifying the
+# signature to extract claims. Use only temporarily for debugging/migration.
+ALLOW_UNVERIFIED_TOKENS = str(os.environ.get('ALLOW_UNVERIFIED_TOKENS', 'false')).lower() in ('1', 'true', 'yes')
 
 
 def make_token(user):
@@ -195,31 +207,70 @@ def get_user_from_auth():
             pass
     if not token:
         return None
-    try:
-        data = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+
+    # Attempt to decode/verify using known secrets
+    data = None
+    for secret in JWT_SECRETS:
+        try:
+            data = jwt.decode(token, secret, algorithms=['HS256'])
+            break
+        except Exception:
+            data = None
+
+    # If verification failed for all secrets, optionally decode without
+    # verification to inspect claims (dangerous; gated by env var).
+    if data is None:
+        if ALLOW_UNVERIFIED_TOKENS:
+            try:
+                data = jwt.decode(token, options={"verify_signature": False})
+            except Exception:
+                data = None
+        else:
+            return None
+
+    # At this point `data` should be a dict of claims if decoding succeeded
+    uid = None
+    if isinstance(data, dict):
         uid = data.get('sub')
-        try:
-            if isinstance(uid, str) and uid.isdigit():
-                uid = int(uid)
-        except Exception:
-            pass
-        # Try DB lookup first; if DB errors and we're in development allow
-        # falling back to the in-memory mirror so local dev still works.
-        db_error = False
-        try:
-            dbu = db_get_user_by_id(uid)
-            if dbu:
-                return {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
-        except Exception:
-            db_error = True
-        if APP_ENV == 'development' or not db_error:
-            # In development prefer the DB but accept the in-memory mirror.
-            return next((u for u in USERS if u['id'] == uid), None)
-        # In production, if the DB errored, don't silently return an in-memory
-        # user — treat the auth as unavailable.
-        return None
+    try:
+        if isinstance(uid, str) and uid.isdigit():
+            uid = int(uid)
     except Exception:
-        return None
+        pass
+
+    # Try DB lookup first; if DB errors and we're in development allow
+    # falling back to the in-memory mirror so local dev still works.
+    db_error = False
+    try:
+        dbu = None
+        if uid is not None:
+            dbu = db_get_user_by_id(uid)
+
+        # If sub lookup failed or returned no user, try email/username claims
+        if not dbu and isinstance(data, dict):
+            email_claim = data.get('email')
+            username_claim = data.get('username') or data.get('name')
+            if email_claim:
+                dbu = db_get_user_by_email(email_claim)
+            if not dbu and username_claim:
+                s = SessionLocal()
+                try:
+                    dbu = s.query(User).filter(User.username == username_claim).first()
+                finally:
+                    s.close()
+
+        if dbu:
+            return {'id': dbu.id, 'email': dbu.email, 'username': dbu.username}
+    except Exception:
+        db_error = True
+
+    # If DB lookup failed but we're in development, fall back to in-memory users
+    if APP_ENV == 'development' or not db_error:
+        return next((u for u in USERS if u['id'] == uid), None)
+
+    # In production, if the DB errored, don't silently return an in-memory
+    # user — treat the auth as unavailable.
+    return None
 
 
 def db_create_membership(campaign_id, user_id, role='player'):

@@ -111,45 +111,6 @@ def login():
     return jsonify({'token': token, 'user': safe_user}), 200
 
 
-@bp.route('/api/_dev/create_user', methods=['POST'])
-def dev_create_user():
-    if APP_ENV != 'development':
-        return jsonify({'message': 'not found'}), 404
-    data = request.get_json() or {}
-    email = data.get('email')
-    username = data.get('username')
-    password = data.get('password')
-    if not email or not username or not password:
-        return jsonify({'message': 'email, username and password required'}), 400
-    try:
-        res = register()
-        return res
-    except Exception as e:
-        return jsonify({'message': 'error creating user', 'error': str(e)}), 500
-
-
-@bp.route('/api/_dev/delete_user', methods=['DELETE'])
-def dev_delete_user():
-    if APP_ENV != 'development':
-        return jsonify({'message': 'not found'}), 404
-    data = request.get_json() or {}
-    email = data.get('email')
-    if not email:
-        return jsonify({'message': 'email required'}), 400
-    try:
-        s = SessionLocal()
-        dbu = s.query(User).filter(User.email == email).first()
-        if dbu:
-            s.delete(dbu)
-            s.commit()
-            s.close()
-            return jsonify({'ok': True}), 200
-    except Exception:
-        pass
-    global USERS
-    before = len(USERS)
-    USERS = [u for u in USERS if u.get('email') != email]
-    after = len(USERS)
-    if after < before:
-        return jsonify({'ok': True}), 200
-    return jsonify({'message': 'user not found'}), 404
+# Development-only helper routes removed for MVP. Use database and scripts/tools
+# for user provisioning and cleanup. The in-memory fallback remains for tests
+# when APP_ENV == 'development' but no public/_dev endpoints are exposed.

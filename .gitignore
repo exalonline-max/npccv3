@@ -1,3 +1,16 @@
 frontend/.env.local
 backend/.env.local
 .env
+
+# Python cache and artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# local sqlite DB
+backend/data.db
+
+# tools and logs
+.vscode/
+*.log

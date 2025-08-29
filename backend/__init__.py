@@ -14,22 +14,17 @@ def create_app(static_folder=None):
         cors.init_app(app, resources={r"/api/*": {"origins": []}}, supports_credentials=False, expose_headers=["Content-Type"])
 
     # Register blueprints
+    # MVP blueprint set: keep only the essential API surface
     from .routes.health import bp as health_bp
-    from .routes.debug import bp as debug_bp
-    from .routes.npcs import bp as npcs_bp
     from .routes.auth import bp as auth_bp
     from .routes.campaigns import bp as campaigns_bp
-    from .routes.messages import bp as messages_bp
     from .routes.characters import bp as characters_bp
-    from .routes.spa import bp as spa_bp
+    from .routes.users import bp as users_bp
 
     app.register_blueprint(health_bp)
-    app.register_blueprint(debug_bp)
-    app.register_blueprint(npcs_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(campaigns_bp)
-    app.register_blueprint(messages_bp)
     app.register_blueprint(characters_bp)
-    app.register_blueprint(spa_bp)
+    app.register_blueprint(users_bp)
 
     return app
