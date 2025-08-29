@@ -11,10 +11,11 @@ services:
     autoDeployTrigger: commit
     # Install the backend requirements file which lives under backend/
     buildCommand: pip install -r backend/requirements.txt
-  # Start the package app using the factory `create_app`. This runs the
-  # consolidated MVP runtime. If you need the legacy monolith, revert to
-  # `backend.app:app` temporarily.
-  startCommand: sh -lc "./deploy/alembic_upgrade.sh || true && gunicorn -k eventlet -w 1 'backend:create_app()' -b 0.0.0.0:$PORT"
+  # Start the monolithic backend module so legacy routes implemented in
+  # `backend/app.py` (e.g. /api/campaigns/test/join, /api/users/me/active-campaign)
+  # remain available to the frontend. Reverting to this known-working start
+  # command while we investigate the new deploy hook.
+  startCommand: gunicorn -k eventlet -w 1 backend.app:app -b 0.0.0.0:$PORT
     envVars:
       - key: APP_ENV
         value: production
