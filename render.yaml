@@ -4,10 +4,14 @@ services:
   - type: web
     runtime: python
     name: npcchatter-backend
-    rootDir: backend
+    # Run from the repository root so the top-level `app.py` WSGI entrypoint
+    # is importable as `app:app`. This avoids relative-import failures when
+    # Gunicorn imports modules.
+    rootDir: .
     autoDeployTrigger: commit
-    buildCommand: pip install -r requirements.txt
-    # If your Flask app object is `app` in backend/app.py, this is correct:
+    # Install the backend requirements file which lives under backend/
+    buildCommand: pip install -r backend/requirements.txt
+    # Use the top-level WSGI entrypoint `app:app` (app.py at repo root).
     startCommand: gunicorn -k eventlet -w 1 app:app -b 0.0.0.0:$PORT
     envVars:
       - key: APP_ENV
@@ -15,7 +19,9 @@ services:
       - key: ALLOWED_ORIGINS
         value: |
           https://npcchatter.com,
-          https://www.npcchatter.com
+          https://www.npcchatter.com,
+          https://npcchatter-frontend.onrender.com,
+          http://localhost:5173
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
