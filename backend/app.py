@@ -498,6 +498,26 @@ def debug_inspect():
     })
 
 
+# Temporary, gated endpoint to help confirm that multiple running instances
+# share the same JWT secret without revealing the secret itself. It returns
+# a SHA256 hex digest of the configured `JWT_SECRET` value. This endpoint
+# is only enabled when the environment variable `DEBUG_SECRET_HASH` is set
+# to "true" or when the app is running in a non-production environment.
+@app.route('/api/_debug/secret-hash', methods=['GET'])
+def debug_secret_hash():
+    enabled = (os.environ.get('DEBUG_SECRET_HASH', '').lower() == 'true') or (APP_ENV != 'production')
+    if not enabled:
+        # Hide existence in production by returning 404
+        return jsonify({'message': 'not found'}), 404
+    try:
+        import hashlib
+        secret = JWT_SECRET or ''
+        h = hashlib.sha256(secret.encode('utf-8')).hexdigest()
+    except Exception:
+        h = None
+    return jsonify({'ok': True, 'secret_hash': h}), 200
+
+
 @app.route('/api/env', methods=['GET'])
 def show_env():
     # Safe debug endpoint: do not return secrets. Useful to confirm what the
