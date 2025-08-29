@@ -20,7 +20,8 @@ def make_token(user):
             username = getattr(user, 'username', None)
     except Exception:
         pass
-    payload = {'sub': uid}
+    # Ensure subject is a string to avoid PyJWT validation errors in newer versions
+    payload = {'sub': str(uid) if uid is not None else None}
     if email is not None:
         try:
             payload['email'] = email
